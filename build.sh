@@ -27,6 +27,12 @@ else
 fi
 printf 'APPL????' > "${BUNDLE}/Contents/PkgInfo"
 
+# Deliberately no `SetFile -a E` to hide the ".app" extension: that flag lives in a
+# com.apple.FinderInfo xattr, which codesign rejects outright ("resource fork, Finder
+# information, or similar detritus not allowed"), so hiding the extension and shipping a
+# valid signature are mutually exclusive. CFBundleName and CFBundleDisplayName are both
+# "Toki"; whether Finder appends ".app" is the viewer's own preference
+# (Finder → 설정 → 고급 → 모든 파일 확장자 보기), not something the bundle can override.
 codesign --force --options runtime --sign - "$BUNDLE"
 codesign --verify --strict "$BUNDLE"
 
