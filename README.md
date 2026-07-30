@@ -4,7 +4,8 @@
 
 **Claude Code 와 Codex CLI 의 남은 사용량을 macOS 메뉴바에서 바로 확인하세요.**
 
-[![Download](https://img.shields.io/badge/download-latest%20dmg-D97757?style=flat-square)](https://github.com/osh0678/toki/releases/latest)
+[![Download](https://img.shields.io/badge/download-latest%20dmg-D97757?style=flat-square)](https://github.com/osh0678/toki/releases/latest/download/Toki.dmg)
+[![Release](https://img.shields.io/github/v/release/osh0678/toki?style=flat-square&color=black)](https://github.com/osh0678/toki/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-black?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-26%2B-black?style=flat-square)](#요구-사항)
 
@@ -51,11 +52,13 @@
 - **오늘 쓴 토큰과 API 환산 비용**을 함께 보여줍니다(구독 청구액이 아닌 참고치).
 - **Liquid Glass.** macOS 26 네이티브 `glassEffect` 로 그렸고, 소비된 구간을 회색으로 덮지
   않아 패널 뒤 배경이 그래프를 통과합니다.
-- **조용합니다.** Dock 아이콘 없음, 네트워크 사용 없음, 자격증명 접근 없음.
+- **조용합니다.** Dock 아이콘 없음, 자격증명 접근 없음. 네트워크는 하루 1회 업데이트
+  확인뿐이고 끌 수 있습니다.
 
 ## 설치
 
-1. [**최신 dmg 다운로드**](https://github.com/osh0678/toki/releases/latest)
+1. [**최신 dmg 다운로드**](https://github.com/osh0678/toki/releases/latest/download/Toki.dmg)
+   — 항상 가장 최신 릴리스를 가리킵니다 ([릴리스 목록](https://github.com/osh0678/toki/releases))
 2. dmg 를 열고 **Toki 를 Applications 로 드래그**
 3. Launchpad 에서 Toki 실행 → 메뉴바에 🐰 가 나타납니다
 
@@ -155,6 +158,7 @@ CLI 가 없거나 출력 형식이 바뀌면 세션 로그의 토큰을 직접 �
   "showCodex": true,
   "showMenuBarPercent": true,
   "panelOpacity": 0.35,
+  "checkForUpdates": true,
   "lookbackDays": 14,
   "claude": { "fiveHourTokenLimit": null, "weeklyTokenLimit": null }
 }
@@ -168,12 +172,26 @@ CLI 가 없거나 출력 형식이 바뀌면 세션 로그의 토큰을 직접 �
 | `showClaude` / `showCodex` | `true` | 끈 도구는 읽지도 않습니다 |
 | `showMenuBarPercent` | `true` | 끄면 메뉴바에 아이콘만(색으로만 경고) |
 | `panelOpacity` | `0.35` | 패널 배경 불투명도(0–1). 0 이면 유리만, 1 이면 가장 진함 |
+| `checkForUpdates` | `true` | 하루 1회 GitHub 릴리스 조회. **끄면 네트워크를 전혀 쓰지 않습니다** |
 | `lookbackDays` | `14` | Claude 로그 조회 범위(1–90) |
 | `claude.fiveHourTokenLimit` | `null` | 추정 모드의 5시간 창 한도를 직접 지정 |
 | `claude.weeklyTokenLimit` | `null` | 추정 모드의 주간 창 한도를 직접 지정 |
 
 경로나 URL 을 받는 키는 **의도적으로 없습니다.** 읽는 위치는 모두 코드에 하드코딩되어
 있어, 설정을 조작해도 임의 파일을 열게 만들 수 없습니다.
+
+## 업데이트
+
+하루 1회 GitHub 릴리스를 확인하고, 새 버전이 있으면 설정 화면 맨 위에 카드가 뜹니다.
+**다운로드**를 누르면 브라우저로 최신 dmg 를 받고, 열어서 Toki 를 Applications 로 드래그하면
+교체됩니다(실행 중이면 먼저 종료).
+
+앱이 스스로 받아서 자기 번들을 덮어쓰지는 **않습니다.** 원격 파일이 실행 코드가 되는 통로를
+만들지 않기 위한 선택이고, ad-hoc 서명이라 교체될 번들의 서명을 검증할 수단도 없기 때문입니다.
+
+확인 요청은 인증 없는 GET 1건이고 업로드하는 데이터가 없습니다. 응답에서 읽는 것은 버전
+문자열(`tag_name`) 하나뿐입니다. 원치 않으면 설정 → 공통 → **업데이트 확인**을 끄면
+Toki 는 네트워크를 전혀 쓰지 않습니다.
 
 ## 문제 해결
 
@@ -212,15 +230,19 @@ open build/Toki.app
 
 이 앱은 자격증명 근처의 파일을 읽는 도구이므로, 신뢰 근거를 검증 가능하게 만들었습니다.
 
-- **네트워크 코드가 없습니다** — `URLSession`/`Network`/`CFNetwork` 미사용·미링크.
-  나갈 통로가 없으니 무엇도 유출될 수 없습니다.
+- **네트워크는 업데이트 확인 1건뿐이고, 끄면 0건입니다** — 하루 1회 GitHub 릴리스 조회.
+  인증 없음, 업로드 본문 없음, 응답에서 버전 문자열 하나만 읽습니다. `URLSession` 은
+  `UpdateChecker.swift` 한 파일로 고정되어 있고(다른 파일에 넣으면 검사 실패), 저수준
+  소켓과 `Network.framework` 는 전면 금지입니다.
+- **앱이 자기 자신을 교체하지 않습니다** — 다운로드 버튼은 dmg URL 을 브라우저로 넘길
+  뿐입니다. 원격 파일이 실행 코드가 되는 통로를 만들지 않기 위한 선택입니다.
 - **Keychain 을 건드리지 않습니다** — `Security.framework` 미링크. Codex 의
   `~/.codex/auth.json` 은 경로조차 코드에 없습니다.
 - **외부 프로세스는 한 곳**(`ClaudeOfficialUsage.swift`)에서만, 절대경로 허용목록 +
   리터럴 인자 + 셸 미사용.
 - **디스크 쓰기는 설정 파일 하나**뿐입니다.
 - `./security-check.sh` 가 소스와 **컴파일된 바이너리** 양쪽에서 매 빌드 검증합니다
-  (소스 6 + 바이너리 6).
+  (소스 10 + 바이너리 6).
 
 전체 위협 모델과 잔여 리스크: **[SECURITY.md](SECURITY.md)**
 
