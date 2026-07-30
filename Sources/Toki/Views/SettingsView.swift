@@ -70,7 +70,15 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(store.snapshot.providers) { provider in
-                    statusRow(for: provider)
+                    VStack(alignment: .leading, spacing: 6) {
+                        statusRow(for: provider)
+                        // Only when the tool is missing — no point nagging about a
+                        // provider that is already reporting.
+                        if provider.failure != nil,
+                           let guide = ToolInstallGuide.guide(forProvider: provider.id) {
+                            InstallHelpCard(guide: guide)
+                        }
+                    }
                 }
             }
         }
