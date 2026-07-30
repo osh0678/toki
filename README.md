@@ -271,11 +271,8 @@ build.sh · package-dmg.sh · security-check.sh
 ---
 
 <div align="center">
-<sub>
 
-Toki 는 개인이 만든 **비공식** 도구입니다. Anthropic, OpenAI 와 제휴·후원 관계가 없습니다.
-Claude Code 와 Codex CLI 의 로컬 출력에 의존하므로, 해당 도구가 업데이트되면 동작이
-바뀔 수 있습니다.
+Toki 는 개인이 만든 **비공식** 도구입니다. Anthropic, OpenAI 와 제휴·후원 관계가 없습니다.<br>
+Claude Code 와 Codex CLI 의 로컬 출력에 의존하므로, 해당 도구가 업데이트되면 동작이 바뀔 수 있습니다.
 
-</sub>
 </div>
