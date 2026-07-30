@@ -82,6 +82,12 @@ struct WidgetView: View {
             Divider()
             Button("Toki 종료", action: onQuit)
         }
+        // The panel is not key when it opens — this accessory app does not reliably
+        // activate — so SwiftUI drew the whole hierarchy in its inactive appearance and
+        // switched to the active one on the first click. That switch is the colour that
+        // "arrived". Pinning the control state removes the delta: the panel always
+        // renders active, whether or not it actually holds key.
+        .environment(\.controlActiveState, .key)
     }
 
     private func toggleSettings() {
