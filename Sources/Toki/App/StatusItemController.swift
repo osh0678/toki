@@ -19,6 +19,9 @@ final class StatusItemController: NSObject {
     private var lastHiddenAt: Date?
     private var shownAt: Date?
     private var outsideClickMonitor: Any?
+    /// A resize animation posts `didResize` on every frame; one pending re-anchor is
+    /// enough to correct all of them.
+    private var isReanchorScheduled = false
 
     /// Ignore dismissal signals briefly after opening, so the activation that happens
     /// while the panel appears cannot immediately close it again.
@@ -264,9 +267,25 @@ final class StatusItemController: NSObject {
     /// The panel opens showing only a loading row and grows once data arrives. Without
     /// re-anchoring, that growth moves the content off the top of the screen — which
     /// looks exactly like "the panel opens but shows nothing".
+    ///
+    /// The move is deferred one runloop turn on purpose. `didResize` is posted while
+    /// `NSView.layout` is still on the stack — the hosting view is being sized by the
+    /// layout engine — so moving the window from here re-enters a display cycle that is
+    /// already running. AppKit answers that by raising from
+    /// `_postWindowNeedsUpdateConstraints`, which killed the app whenever the panel
+    /// changed height, most reliably on the settings transition. Deferring keeps the
+    /// correction and performs it once the cycle has finished.
     @objc private func panelDidResize(_ notification: Notification) {
         guard let panel, (notification.object as? NSWindow) === panel, panel.isVisible else { return }
-        panel.anchor(below: statusItem.button)
+        guard !isReanchorScheduled else { return }
+        isReanchorScheduled = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isReanchorScheduled = false
+            guard let panel = self.panel, panel.isVisible else { return }
+            panel.anchor(below: self.statusItem.button)
+        }
     }
 
     /// SwiftUI's intrinsic height is only known once measured, so ask the hosting
@@ -277,8 +296,41 @@ final class StatusItemController: NSObject {
         let measured = hosting.sizeThatFits(
             in: CGSize(width: Theme.panelWidth, height: .greatestFiniteMagnitude)
         )
-        let height = measured.height > 1 ? measured.height : Theme.panelFallbackHeight
-        panel.setContentSize(CGSize(width: Theme.panelWidth, height: height))
+        panel.setContentSize(
+            CGSize(width: Theme.panelWidth, height: usableHeight(measured.height, for: panel))
+        )
+    }
+
+    /// A measured height is not automatically a legal window dimension.
+    ///
+    /// A SwiftUI view that accepts the size it is offered answers `sizeThatFits` with
+    /// the proposal itself — `.greatestFiniteMagnitude` — and passing that to
+    /// `setContentSize` makes AppKit raise `NSInternalInconsistencyException` and take
+    /// the app down. Anything not finite, not positive, or taller than the screen is
+    /// therefore treated as unusable rather than trusted.
+    private func usableHeight(_ height: CGFloat, for panel: GlassPanel) -> CGFloat {
+        guard height.isFinite, height > 1 else { return Theme.panelFallbackHeight }
+        let screen = panel.screen ?? statusItem.button?.window?.screen ?? NSScreen.main
+        guard let ceiling = screen?.visibleFrame.height else { return height }
+        return min(height, ceiling)
+    }
+
+    /// Resizes the panel to the height SwiftUI just measured.
+    ///
+    /// Always asynchronous: the report arrives while SwiftUI is laying out, and resizing
+    /// a window at that moment is exactly the re-entrancy that used to crash the app.
+    /// One runloop turn later the cycle has finished and the resize is safe.
+    private func applyContentHeight(_ height: CGFloat) {
+        guard height.isFinite, height > 1 else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = self.panel, panel.isVisible else { return }
+            let target = self.usableHeight(height, for: panel)
+            guard abs(panel.frame.height - target) > 0.5 else { return }
+
+            panel.setContentSize(CGSize(width: Theme.panelWidth, height: target))
+            panel.anchor(below: self.statusItem.button)
+        }
     }
 
     private func makePanel() -> GlassPanel {
@@ -286,10 +338,18 @@ final class StatusItemController: NSObject {
             rootView: WidgetView(
                 store: store,
                 onClose: { [weak self] in self?.hidePanel() },
-                onQuit: { NSApp.terminate(nil) }
+                onQuit: { NSApp.terminate(nil) },
+                onHeightChange: { [weak self] height in self?.applyContentHeight(height) }
             )
         )
-        controller.sizingOptions = [.preferredContentSize]
+        // Deliberately *not* `.preferredContentSize`. That option routes every SwiftUI
+        // size change through the Auto Layout engine, so the hosting view's frame is
+        // updated from inside `NSView.layout` — and SwiftUI answers that frame change by
+        // asking the window for another constraints pass, which AppKit refuses mid-cycle
+        // by raising from `_postWindowNeedsUpdateConstraints`. The app died there on
+        // every settings transition. The window is sized from `applyContentHeight`
+        // instead, outside the layout pass.
+        controller.sizingOptions = []
         hosting = controller
 
         let panel = GlassPanel(hosting: controller)
