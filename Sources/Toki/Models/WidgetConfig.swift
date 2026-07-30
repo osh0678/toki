@@ -30,6 +30,11 @@ struct WidgetConfig: Sendable, Equatable {
     /// The only setting that enables any networking at all: one GitHub release lookup
     /// per day. Off means Toki makes no network request whatsoever.
     let checkForUpdates: Bool
+    /// Whether a found update installs itself in the background instead of opening the
+    /// browser. Defaults to **off**: replacing the running app is the most consequential
+    /// thing Toki can do, so it happens only once the user has asked for it. Requires
+    /// `checkForUpdates`, since nothing can be installed without a check first.
+    let autoInstallUpdates: Bool
     /// How far back Claude session logs are scanned (bounds work on large histories).
     let lookbackDays: Int
     /// Explicit Claude 5-hour-window token limit. When nil, it is self-calibrated
@@ -47,6 +52,7 @@ struct WidgetConfig: Sendable, Equatable {
         showMenuBarPercent: true,
         panelOpacity: defaultPanelOpacity,
         checkForUpdates: true,
+        autoInstallUpdates: false,
         lookbackDays: defaultLookbackDays,
         claudeFiveHourTokenLimit: nil,
         claudeWeeklyTokenLimit: nil
@@ -84,6 +90,10 @@ struct WidgetConfig: Sendable, Equatable {
             panelOpacity: min(1, max(0, (root["panelOpacity"] as? NSNumber)?.doubleValue
                 ?? defaultPanelOpacity)),
             checkForUpdates: root["checkForUpdates"] as? Bool ?? true,
+            // Defaults to false, and is forced false when checks are off, so neither a
+            // missing key nor a hand-edited file can turn self-replacement on by accident.
+            autoInstallUpdates: (root["autoInstallUpdates"] as? Bool ?? false)
+                && (root["checkForUpdates"] as? Bool ?? true),
             lookbackDays: max(1, min(90, lookback)),
             claudeFiveHourTokenLimit: claude.intValue("fiveHourTokenLimit").flatMap { $0 > 0 ? $0 : nil },
             claudeWeeklyTokenLimit: claude.intValue("weeklyTokenLimit").flatMap { $0 > 0 ? $0 : nil }

@@ -22,6 +22,12 @@ final class UsageStore {
     private(set) var clock: Date
     /// Newer release, when one exists and update checks are enabled.
     private(set) var availableUpdate: AvailableUpdate?
+    /// Where background installation stands. Observed by `UpdateCard`, so a silent
+    /// process is still a visible one.
+    private(set) var updateInstall: UpdateInstallState = .idle
+    /// The version installation has already been attempted for, successful or not.
+    /// Without it the daily check would retry a failing install indefinitely.
+    private var installAttemptedVersion: String?
 
     /// Once a day is plenty for a widget, and it keeps the single network request rare.
     private static let updateCheckInterval: TimeInterval = 86_400
@@ -104,12 +110,20 @@ final class UsageStore {
     /// Applies settings edited in the UI straight away. Persisting them to disk is the
     /// caller's job, so an unsaved experiment can be tried without touching the file.
     func apply(_ updated: WidgetConfig) {
+        // Read before the assignment: afterwards there is no "previous" left to compare.
+        let wasAutoInstalling = config.autoInstallUpdates
         config = updated
         // Clearing the throttle means a newly enabled CLI (or shortened interval) takes
         // effect on this refresh rather than up to ten minutes later.
         lastOfficialAttempt = nil
         // Re-check immediately so switching the setting on has a visible effect.
         lastUpdateCheck = nil
+        // Turning auto-install back on is an explicit request to try again, so a previous
+        // failure for this version should stop suppressing it.
+        if updated.autoInstallUpdates, !wasAutoInstalling {
+            installAttemptedVersion = nil
+            updateInstall = .idle
+        }
         refresh(force: updated.useClaudeCLI)
         checkForUpdateIfDue()
     }
@@ -128,8 +142,44 @@ final class UsageStore {
 
         Task { [weak self] in
             let found = await UpdateChecker.check(currentVersion: UpdateChecker.currentVersion)
-            self?.availableUpdate = found
+            guard let self else { return }
+            self.availableUpdate = found
+            if let found { self.installIfEnabled(found) }
         }
+    }
+
+    /// Replaces the app bundle in the background, then stops.
+    ///
+    /// Deliberately no automatic relaunch: this process keeps running the old code
+    /// either way, so quitting on the user's behalf would interrupt them to achieve
+    /// nothing they would not get for free at their next launch. `UpdateCard` offers
+    /// the restart as a button instead.
+    private func installIfEnabled(_ update: AvailableUpdate) {
+        guard config.autoInstallUpdates, UpdateInstaller.isConfigured else { return }
+        guard installAttemptedVersion != update.version else { return }
+        installAttemptedVersion = update.version
+        updateInstall = .downloading
+
+        Task { [weak self] in
+            do {
+                // Verification happens inside `install`, before anything is written; it
+                // reports `.verifying` here only so the UI can say what is happening.
+                self?.updateInstall = .verifying
+                _ = try await UpdateInstaller.install(update)
+                self?.updateInstall = .installed(update.version)
+            } catch {
+                let reason = (error as? LocalizedError)?.errorDescription
+                    ?? "업데이트를 설치하지 못했습니다"
+                self?.updateInstall = .failed(reason)
+            }
+        }
+    }
+
+    /// Quits and relaunches so the already-installed bundle takes effect. Only
+    /// meaningful once `updateInstall` reports `.installed`.
+    func restartForUpdate() {
+        guard case .installed = updateInstall else { return }
+        UpdateInstaller.relaunchInstalled()
     }
 
     /// Called when the panel opens, so opening it never shows stale figures.

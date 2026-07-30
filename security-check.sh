@@ -55,6 +55,16 @@ confine_source() {
     fi
 }
 
+# Fails when `pattern` is *absent* from `file` — for safeguards whose removal would be
+# silent. The confine_* checks above can only catch a capability being added somewhere it
+# does not belong; this catches a protection being deleted where it does.
+require_source() {
+    local label="$1" pattern="$2" file="$3" hits
+    hits=$(grep -rn --include="$file" -E "$pattern" "$SOURCES" 2>/dev/null || true)
+    hits=$(printf '%s\n' "$hits" | grep -vE '^[^:]+:[0-9]+: *(//|///|\*)' || true)
+    if [ -n "$hits" ]; then pass "$label"; else fail "$label"; fi
+}
+
 # Fails when `pattern` appears in captured `text`.
 forbid_text() {
     local label="$1" pattern="$2" text="$3" hits
@@ -77,9 +87,9 @@ require_text() {
 echo "── 소스 검사 ──────────────────────────────────────"
 forbid_source "저수준 네트워크 API 미사용 (Network/CFStream/소켓)" \
     '\b(NSURLConnection|CFStreamCreate|NWConnection|NWBrowser|CFSocket)\b'
-confine_source "URLSession 은 UpdateChecker.swift 에서만" \
+confine_source "URLSession 은 UpdateChecker/UpdateInstaller.swift 에서만" \
     '\bURLSession\b' \
-    'UpdateChecker.swift'
+    'UpdateChecker.swift|UpdateInstaller.swift'
 forbid_source "Keychain/Security API 미사용" \
     '\b(SecItem[A-Za-z]*|SecKeychain[A-Za-z]*|kSecClass|LAContext)\b|import +Security'
 forbid_source "자격증명 파일 경로 미참조" \
@@ -89,12 +99,20 @@ forbid_source "셸 경유 실행 없음" \
 confine_source "외부 프로세스는 ClaudeOfficialUsage.swift 에서만" \
     '\b(Process\(\)|NSTask|posix_spawn|execv[pe]?|NSAppleScript)\b|popen\(|Darwin\.system\(' \
     'ClaudeOfficialUsage.swift'
-confine_source "파일 쓰기는 SettingsWriter.swift 에서만" \
-    'FileHandle\(forWritingTo|FileHandle\(forUpdating|\.write\(to:|createFile\(atPath' \
-    'SettingsWriter.swift'
-confine_source "URL 열기·클립보드는 InstallHelpCard/UpdateCard 에서만" \
+# Widened beyond byte-writing APIs to the FileManager calls that move directories
+# around: the updater replaces an app bundle without ever calling `write(to:)`, so the
+# original pattern would have waved it through.
+confine_source "파일 쓰기는 SettingsWriter/UpdateInstaller.swift 에서만" \
+    'FileHandle\(forWritingTo|FileHandle\(forUpdating|\.write\(to:|createFile\(atPath|replaceItemAt|moveItem\(at|copyItem\(at|removeItem\(at|createDirectory\(at' \
+    'SettingsWriter.swift|UpdateInstaller.swift'
+confine_source "URL 열기는 InstallHelpCard/UpdateCard/UpdateInstaller.swift 에서만" \
     'NSWorkspace[^\n]*open|NSPasteboard' \
-    'InstallHelpCard.swift|UpdateCard.swift'
+    'InstallHelpCard.swift|UpdateCard.swift|UpdateInstaller.swift'
+# The trust anchor for self-replacement. A build whose public key is absent, or whose
+# verification is not performed before the swap, must not ship.
+require_source "업데이트 서명 검증은 Ed25519 공개키로" \
+    'isValidSignature' \
+    'UpdateInstaller.swift'
 forbid_source "클립보드 읽기 없음" \
     'pasteboardItems|\.string\(forType:|readObjects\(forClasses'
 forbid_source "전역 키보드 감시 없음" \

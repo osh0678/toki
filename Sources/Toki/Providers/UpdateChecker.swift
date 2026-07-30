@@ -9,16 +9,16 @@ struct AvailableUpdate: Sendable, Equatable {
 
 /// Asks GitHub whether a newer release exists.
 ///
-/// This is the **only** networking in Toki, and it is deliberately as small as it can
-/// be: one unauthenticated GET whose response is read for a single string
-/// (`tag_name`). Nothing is uploaded — no telemetry, no version in the request body,
-/// no identifier. GitHub learns what any web request reveals: an IP made a request.
+/// Deliberately as small as it can be: one unauthenticated GET whose response is read
+/// for a single string (`tag_name`). Nothing is uploaded — no telemetry, no version in
+/// the request body, no identifier. GitHub learns what any web request reveals: an IP
+/// made a request.
 ///
-/// The download itself is **not** performed here. Handing the dmg URL to the browser
-/// keeps two properties: Toki never writes an app bundle (so it can never replace
-/// itself, which would be an arbitrary-code-execution channel on an ad-hoc-signed
-/// app), and the user still sees the Finder install step. Silent self-replacement
-/// would need Developer ID signing plus notarisation to be defensible.
+/// No download happens here, and this file must stay that way. Fetching belongs to
+/// `UpdateInstaller` precisely because that is where the Ed25519 verification lives:
+/// splitting "decide an update exists" from "accept bytes as executable code" keeps the
+/// part that has to be audited small. Both URLs below are hardcoded rather than read
+/// out of the response, so a hostile reply cannot point the download elsewhere.
 enum UpdateChecker {
     private static let latestReleaseAPI = URL(
         string: "https://api.github.com/repos/osh0678/toki/releases/latest"

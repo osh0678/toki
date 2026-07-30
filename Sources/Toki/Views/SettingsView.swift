@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var showMenuBarPercent: Bool
     @State private var panelOpacity: Double
     @State private var checkForUpdates: Bool
+    @State private var autoInstallUpdates: Bool
     @State private var useCLI: Bool
     @State private var refreshSeconds: Int
     @State private var officialMinutes: Int
@@ -32,6 +33,7 @@ struct SettingsView: View {
         _showMenuBarPercent = State(initialValue: config.showMenuBarPercent)
         _panelOpacity = State(initialValue: config.panelOpacity)
         _checkForUpdates = State(initialValue: config.checkForUpdates)
+        _autoInstallUpdates = State(initialValue: config.autoInstallUpdates)
         _useCLI = State(initialValue: config.useClaudeCLI)
         _refreshSeconds = State(initialValue: config.refreshSeconds)
         _officialMinutes = State(initialValue: max(1, config.officialRefreshSeconds / 60))
@@ -41,7 +43,12 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.cardSpacing) {
             if let update = store.availableUpdate {
-                UpdateCard(update: update, currentVersion: UpdateChecker.currentVersion)
+                UpdateCard(
+                    update: update,
+                    currentVersion: UpdateChecker.currentVersion,
+                    install: store.updateInstall,
+                    onRestart: { store.restartForUpdate() }
+                )
             }
             statusCard
             claudeCard
@@ -161,6 +168,20 @@ struct SettingsView: View {
                 caption: "하루 1회 GitHub 릴리스만 조회 — Toki 의 유일한 네트워크 사용",
                 isOn: $checkForUpdates
             )
+
+            // Hidden entirely when no release key is compiled in: the toggle would be
+            // inert, and an inert switch that claims to auto-update is worse than none.
+            if UpdateInstaller.isConfigured {
+                Divider().opacity(0.22)
+
+                toggleRow(
+                    title: "자동 설치",
+                    caption: "서명을 확인한 뒤 백그라운드로 교체합니다 — 다음 실행부터 새 버전",
+                    isOn: $autoInstallUpdates
+                )
+                .disabled(!checkForUpdates)
+                .opacity(checkForUpdates ? 1 : 0.45)
+            }
 
             Divider().opacity(0.22)
 
@@ -300,6 +321,9 @@ struct SettingsView: View {
             showMenuBarPercent: showMenuBarPercent,
             panelOpacity: panelOpacity,
             checkForUpdates: checkForUpdates,
+            // Mirrors the clamp in `WidgetConfig.load`: turning checks off must also turn
+            // installation off, or the toggle would stay armed with nothing gating it.
+            autoInstallUpdates: autoInstallUpdates && checkForUpdates,
             lookbackDays: lookbackDays,
             claudeFiveHourTokenLimit: store.config.claudeFiveHourTokenLimit,
             claudeWeeklyTokenLimit: store.config.claudeWeeklyTokenLimit

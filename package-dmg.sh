@@ -60,6 +60,30 @@ STABLE="dist/${APP_NAME}.dmg"
 cp "$DMG" "$STABLE"
 ( cd dist && shasum -a 256 "${APP_NAME}.dmg" > "${APP_NAME}.dmg.sha256" )
 
+
+# --- Self-update archive -----------------------------------------------------
+# A second container alongside the dmg, for the in-app updater only. Apple Archive
+# rather than the dmg, because expanding a dmg needs hdiutil — a subprocess — and the
+# updater must not spawn one (SECURITY.md G3). `aa -D` takes the bundle's parent as the
+# archive root and its basename as the single entry, so extraction reproduces Toki.app
+# with its code signature and xattrs intact.
+AAR="dist/${APP_NAME}.aar"
+echo "▸ 자동 업데이트 아카이브"
+rm -f "$AAR" "${AAR}.sig"
+aa archive -D "$BUNDLE" -o "$AAR"
+
+# Signed with the Ed25519 release key, which lives at ~/.toki/release.key and never in
+# this repository. Without a signature the app refuses to install the archive at all, so
+# an unsigned release is not a degraded release — it is a manual-download-only one.
+if [ -f "$HOME/.toki/release.key" ]; then
+    swift scripts/sign-release.swift "$AAR" > /dev/null
+    echo "  ${AAR} + .sig"
+else
+    echo "  ⚠️  ~/.toki/release.key 없음 — 서명하지 않았습니다."
+    echo "      서명 없는 릴리스는 앱이 자동 설치를 거부하고 수동 다운로드로만 동작합니다."
+    echo "      키 생성: swift scripts/make-release-key.swift"
+fi
+
 echo
 echo "✅ ${DMG}  (${SIZE})"
 echo "   ${DMG}.sha256"
@@ -68,9 +92,10 @@ echo
 echo "   열기:   open ${DMG}"
 echo "   설치:   마운트된 이미지에서 Toki 를 Applications 로 드래그"
 echo
-echo "▸ 릴리스로 배포하려면 — 네 파일 모두 첨부해야 README 링크가 동작합니다"
+echo "▸ 릴리스로 배포하려면 — 여섯 파일 모두 첨부해야 README 링크와 자동 설치가 동작합니다"
 echo "   gh release create v${VERSION} \\"
 echo "       ${DMG} ${DMG}.sha256 ${STABLE} ${STABLE}.sha256 \\"
+echo "       ${AAR} ${AAR}.sig \\"
 echo "       --title \"Toki ${VERSION}\" --notes-file CHANGELOG.md"
 echo "   (gh 가 없으면 GitHub 웹 → Releases → Draft a new release 에서 첨부)"
 echo "   ${APP_NAME}.dmg 가 README 의 영구 다운로드 링크 대상입니다"
