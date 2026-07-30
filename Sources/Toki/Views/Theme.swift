@@ -44,16 +44,30 @@ enum Theme {
         }
     }
 
-    /// Bars shift warm as they fill, so a glance is enough to read the state.
-    static func barColor(forFraction fraction: Double, accent: Color) -> Color {
-        if fraction >= criticalThreshold { return ember }
-        if fraction >= warningThreshold { return amber }
-        return accent
-    }
-
     /// Colour for a bar that renders remaining headroom: cool while there is plenty
     /// left, warming as it drains.
-    static func barColor(forRemaining remaining: Double, accent: Color) -> Color {
-        barColor(forFraction: 1 - remaining, accent: accent)
+    ///
+    /// `warningRemaining` is user-configurable while the critical point is not, so the
+    /// two can end up in the wrong order — a warning set to 5% would otherwise turn red
+    /// before it ever turned amber. Clamping critical to sit at or below the warning
+    /// keeps the sequence honest at every setting.
+    static func barColor(
+        forRemaining remaining: Double,
+        accent: Color,
+        warningRemaining: Double = lowRemaining
+    ) -> Color {
+        if remaining <= min(criticalRemaining, warningRemaining) { return ember }
+        if remaining <= warningRemaining { return amber }
+        return accent
     }
+}
+
+/// Carries the configured warning point down to whatever draws a bar.
+///
+/// Passed through the environment rather than added to every initialiser: `UsageBar`
+/// sits two levels below the only view that holds the config, and threading one Double
+/// through `ProviderCard` purely to forward it would put the value in signatures that
+/// have no other use for it.
+extension EnvironmentValues {
+    @Entry var warningRemaining: Double = Theme.lowRemaining
 }

@@ -16,6 +16,9 @@ struct SettingsView: View {
     @State private var showCodex: Bool
     @State private var showMenuBarPercent: Bool
     @State private var panelOpacity: Double
+    /// Held as a Double because `Slider` binds to a floating-point value; rounded back
+    /// to a whole percent in `edited`.
+    @State private var warningRemainingPercent: Double
     @State private var checkForUpdates: Bool
     @State private var autoInstallUpdates: Bool
     @State private var useCLI: Bool
@@ -32,6 +35,7 @@ struct SettingsView: View {
         _showCodex = State(initialValue: config.showCodex)
         _showMenuBarPercent = State(initialValue: config.showMenuBarPercent)
         _panelOpacity = State(initialValue: config.panelOpacity)
+        _warningRemainingPercent = State(initialValue: Double(config.warningRemainingPercent))
         _checkForUpdates = State(initialValue: config.checkForUpdates)
         _autoInstallUpdates = State(initialValue: config.autoInstallUpdates)
         _useCLI = State(initialValue: config.useClaudeCLI)
@@ -213,6 +217,31 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
+                        Text("경고 표시 기준")
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        Text("\(Int(warningRemainingPercent.rounded()))% 남음")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.amber)
+                            .contentTransition(.numericText())
+                    }
+                    Text("이 아래로 떨어지면 막대와 메뉴바 아이콘이 노란색으로 바뀝니다")
+                        .font(.system(size: 8.5, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(
+                    value: $warningRemainingPercent,
+                    in: Double(WidgetConfig.minWarningRemainingPercent)
+                        ... Double(WidgetConfig.maxWarningRemainingPercent),
+                    step: 5
+                )
+                .controlSize(.mini)
+            }
+
+            Divider().opacity(0.22)
+
+            VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
                         Text("배경 불투명도")
                             .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                         Text("\(Int((panelOpacity * 100).rounded()))%")
@@ -345,6 +374,7 @@ struct SettingsView: View {
             showCodex: showCodex,
             showMenuBarPercent: showMenuBarPercent,
             panelOpacity: panelOpacity,
+            warningRemainingPercent: Int(warningRemainingPercent.rounded()),
             checkForUpdates: checkForUpdates,
             // Mirrors the clamp in `WidgetConfig.load`: turning checks off must also turn
             // installation off, or the toggle would stay armed with nothing gating it.

@@ -49,7 +49,9 @@ struct WidgetView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 }
 
-                footer
+                // Settings has no footer: the line that used to sit here only restated
+                // what the controls themselves already make obvious.
+                if !showingSettings { footer }
             }
             .padding(Theme.outerPadding)
         }
@@ -91,6 +93,9 @@ struct WidgetView: View {
         // "arrived". Pinning the control state removes the delta: the panel always
         // renders active, whether or not it actually holds key.
         .environment(\.controlActiveState, .key)
+        // Injected once here, where the config actually lives, so every bar below reads
+        // the same warning point.
+        .environment(\.warningRemaining, store.config.warningRemainingFraction)
         // Measured here, where the height is still the content's own. Reporting it lets
         // AppKit resize the window on its own terms instead of letting the layout engine
         // drive the window size from inside a running display cycle, which crashed.
@@ -126,9 +131,6 @@ struct WidgetView: View {
     }
 
     private var footerText: String {
-        if showingSettings {
-            return "변경은 즉시 적용 · 저장하면 다음 실행에도 유지"
-        }
         let stamp = Display.clockTime(store.snapshot.capturedAt)
         return "\(stamp) 기준 · 로컬 \(store.refreshSeconds)초 · 공식 \(store.officialRefreshSeconds / 60)분"
     }

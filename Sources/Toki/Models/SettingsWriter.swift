@@ -23,6 +23,7 @@ enum SettingsWriter {
             "showCodex": config.showCodex,
             "showMenuBarPercent": config.showMenuBarPercent,
             "panelOpacity": config.panelOpacity,
+            "warningRemainingPercent": config.warningRemainingPercent,
             "checkForUpdates": config.checkForUpdates,
             "autoInstallUpdates": config.autoInstallUpdates,
             "lookbackDays": config.lookbackDays,

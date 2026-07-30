@@ -13,6 +13,12 @@ struct WidgetConfig: Sendable, Equatable {
     static let minOfficialRefreshSeconds = 60
     /// Deliberately low: the point of the material is readability, not opacity.
     static let defaultPanelOpacity = 0.35
+    /// Warn once a quarter of the quota is left. The bounds keep the setting meaningful:
+    /// above 50 nearly everything reads as a warning, below 5 the warning arrives too
+    /// late to act on.
+    static let defaultWarningRemainingPercent = 25
+    static let minWarningRemainingPercent = 5
+    static let maxWarningRemainingPercent = 50
 
     /// How often the widget re-reads the logs.
     let refreshSeconds: Int
@@ -27,6 +33,10 @@ struct WidgetConfig: Sendable, Equatable {
     let showMenuBarPercent: Bool
     /// 0 = bare glass (most transparent), 1 = fully opaque HUD material.
     let panelOpacity: Double
+    /// Remaining headroom, as a whole percent, below which bars and the menu bar icon
+    /// switch to the warning colour. Stored as a percent because that is the unit the
+    /// setting is expressed in; `warningRemainingFraction` converts it for drawing.
+    let warningRemainingPercent: Int
     /// The only setting that enables any networking at all: one GitHub release lookup
     /// per day. Off means Toki makes no network request whatsoever.
     let checkForUpdates: Bool
@@ -51,12 +61,16 @@ struct WidgetConfig: Sendable, Equatable {
         showCodex: true,
         showMenuBarPercent: true,
         panelOpacity: defaultPanelOpacity,
+        warningRemainingPercent: defaultWarningRemainingPercent,
         checkForUpdates: true,
         autoInstallUpdates: false,
         lookbackDays: defaultLookbackDays,
         claudeFiveHourTokenLimit: nil,
         claudeWeeklyTokenLimit: nil
     )
+
+    /// The warning point as the fraction the drawing code works in.
+    var warningRemainingFraction: Double { Double(warningRemainingPercent) / 100 }
 
     static var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -89,6 +103,9 @@ struct WidgetConfig: Sendable, Equatable {
             showMenuBarPercent: root["showMenuBarPercent"] as? Bool ?? true,
             panelOpacity: min(1, max(0, (root["panelOpacity"] as? NSNumber)?.doubleValue
                 ?? defaultPanelOpacity)),
+            warningRemainingPercent: min(maxWarningRemainingPercent,
+                max(minWarningRemainingPercent,
+                    root.intValue("warningRemainingPercent") ?? defaultWarningRemainingPercent)),
             checkForUpdates: root["checkForUpdates"] as? Bool ?? true,
             // Defaults to false, and is forced false when checks are off, so neither a
             // missing key nor a hand-edited file can turn self-replacement on by accident.
