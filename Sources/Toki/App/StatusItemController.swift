@@ -19,9 +19,6 @@ final class StatusItemController: NSObject {
     private var lastHiddenAt: Date?
     private var shownAt: Date?
     private var outsideClickMonitor: Any?
-    private var escapeMonitor: Any?
-
-    private static let escapeKeyCode: UInt16 = 53
 
     /// Ignore dismissal signals briefly after opening, so the activation that happens
     /// while the panel appears cannot immediately close it again.
@@ -168,13 +165,15 @@ final class StatusItemController: NSObject {
         // An accessory app is not guaranteed to activate from a status-item click, so
         // order front unconditionally and only then try to take key status. Worst case
         // the panel is visible but not key — far better than invisible.
+        // Activation is requested but not relied on: this accessory app was measured
+        // failing to become active even with the forcing APIs, so the panel is ordered
+        // front unconditionally. Dismissal therefore cannot depend on key status —
+        // that is what the click monitor is for.
         NSApp.activate()
         shown.orderFrontRegardless()
-        shown.makeKey()
         statusItem.button?.highlight(true)
         shownAt = Date()
         startOutsideClickMonitor()
-        startEscapeMonitor()
 
         logPanelState(shown)
         store.refreshIfStale()
@@ -182,7 +181,6 @@ final class StatusItemController: NSObject {
 
     private func hidePanel() {
         stopOutsideClickMonitor()
-        stopEscapeMonitor()
         panel?.orderOut(nil)
         statusItem.button?.highlight(false)
         lastHiddenAt = Date()
@@ -224,33 +222,11 @@ final class StatusItemController: NSObject {
         outsideClickMonitor = nil
     }
 
-    /// Escape closes the panel.
-    ///
-    /// A *local* monitor only sees key events already delivered to Toki, so this needs
-    /// no input-monitoring permission — unlike a global keyboard monitor, which would
-    /// observe every keystroke on the machine and is deliberately not used. Returning
-    /// nil consumes the event so Escape does not also reach the panel's content.
-    private func startEscapeMonitor() {
-        guard escapeMonitor == nil else { return }
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == Self.escapeKeyCode else { return event }
-            // Only a Bool crosses the isolation boundary: NSEvent is not Sendable, so it
-            // cannot be returned out of `assumeIsolated`.
-            let consumed = MainActor.assumeIsolated { () -> Bool in
-                guard let self, let panel = self.panel, panel.isVisible else { return false }
-                self.hidePanel()
-                return true
-            }
-            return consumed ? nil : event
-        }
-    }
-
-    private func stopEscapeMonitor() {
-        if let escapeMonitor {
-            NSEvent.removeMonitor(escapeMonitor)
-        }
-        escapeMonitor = nil
-    }
+    // Escape-to-close is deliberately absent. It would need the panel to be the key
+    // window, and this accessory app was measured never becoming active — so neither a
+    // local key monitor nor `cancelOperation` is ever reached. The alternative, a
+    // global keyboard monitor, would observe every keystroke on the machine and needs
+    // input-monitoring permission, which is not a trade worth making for one shortcut.
 
     /// Diagnostics for `TOKI_DEBUG_OPEN_PANEL=1`: without this, a panel that fails to
     /// appear gives nothing to go on from the outside.
