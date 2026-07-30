@@ -1,0 +1,106 @@
+# ─── Build output ────────────────────────────────────────────────────────────
+.build/
+build/
+dist/
+DerivedData/
+*.o
+*.dSYM/
+
+# Release artefacts are attached to GitHub Releases, never committed.
+*.dmg
+*.dmg.sha256
+*.zip
+*.pkg
+*.app/
+
+# ─── SwiftPM / Xcode ─────────────────────────────────────────────────────────
+.swiftpm/
+Packages/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+timeline.xctimeline
+playground.xcworkspace
+*.moved-aside
+*.hmap
+*.ipa
+
+# Coverage / profiling
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+*.xcresult/
+
+# ─── macOS ───────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.fseventsd
+.apdisk
+Icon?
+
+# ─── Secrets — safety net ────────────────────────────────────────────────────
+# Toki never reads these, and nothing here should ever exist in the repo. The
+# patterns are kept so an accidental copy cannot be committed by mistake.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.der
+*.keystore
+*.jks
+*.keychain
+*.keychain-db
+*.mobileprovision
+*.provisionprofile
+id_rsa*
+id_ecdsa*
+id_ed25519*
+*.ppk
+.netrc
+.npmrc
+auth.json
+credentials
+credentials.json
+secrets.json
+secrets.yaml
+serviceAccount*.json
+*_rsa
+*_dsa
+
+# ─── Local config / logs ─────────────────────────────────────────────────────
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+.direnv/
+.tool-versions
+
+# Agent / editor local state
+.claude/
+CLAUDE.local.md
+.cursor/
+.vscode/
+.idea/
+*.iml
+
+# ─── Node / Python (only if tooling is added later) ──────────────────────────
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
