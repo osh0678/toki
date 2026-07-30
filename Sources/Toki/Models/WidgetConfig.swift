@@ -27,6 +27,9 @@ struct WidgetConfig: Sendable, Equatable {
     let showMenuBarPercent: Bool
     /// 0 = bare glass (most transparent), 1 = fully opaque HUD material.
     let panelOpacity: Double
+    /// The only setting that enables any networking at all: one GitHub release lookup
+    /// per day. Off means Toki makes no network request whatsoever.
+    let checkForUpdates: Bool
     /// How far back Claude session logs are scanned (bounds work on large histories).
     let lookbackDays: Int
     /// Explicit Claude 5-hour-window token limit. When nil, it is self-calibrated
@@ -43,6 +46,7 @@ struct WidgetConfig: Sendable, Equatable {
         showCodex: true,
         showMenuBarPercent: true,
         panelOpacity: defaultPanelOpacity,
+        checkForUpdates: true,
         lookbackDays: defaultLookbackDays,
         claudeFiveHourTokenLimit: nil,
         claudeWeeklyTokenLimit: nil
@@ -79,6 +83,7 @@ struct WidgetConfig: Sendable, Equatable {
             showMenuBarPercent: root["showMenuBarPercent"] as? Bool ?? true,
             panelOpacity: min(1, max(0, (root["panelOpacity"] as? NSNumber)?.doubleValue
                 ?? defaultPanelOpacity)),
+            checkForUpdates: root["checkForUpdates"] as? Bool ?? true,
             lookbackDays: max(1, min(90, lookback)),
             claudeFiveHourTokenLimit: claude.intValue("fiveHourTokenLimit").flatMap { $0 > 0 ? $0 : nil },
             claudeWeeklyTokenLimit: claude.intValue("weeklyTokenLimit").flatMap { $0 > 0 ? $0 : nil }

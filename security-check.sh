@@ -46,7 +46,7 @@ confine_source() {
     local label="$1" pattern="$2" allowed="$3" hits
     hits=$(grep -rn --include='*.swift' -E "$pattern" "$SOURCES" 2>/dev/null || true)
     hits=$(printf '%s\n' "$hits" | grep -vE '^[^:]+:[0-9]+: *(//|///|\*)' || true)
-    hits=$(printf '%s\n' "$hits" | grep -v "$allowed" || true)
+    hits=$(printf '%s\n' "$hits" | grep -vE "$allowed" || true)
     if [ -n "$hits" ]; then
         fail "$label"
         printf '%s\n' "$hits" | sed 's/^/      /'
@@ -75,8 +75,11 @@ require_text() {
 }
 
 echo "── 소스 검사 ──────────────────────────────────────"
-forbid_source "네트워크 API 미사용 (URLSession/Network/CFStream)" \
-    '\b(URLSession|NSURLConnection|CFStreamCreate|NWConnection|NWBrowser|CFSocket)\b'
+forbid_source "저수준 네트워크 API 미사용 (Network/CFStream/소켓)" \
+    '\b(NSURLConnection|CFStreamCreate|NWConnection|NWBrowser|CFSocket)\b'
+confine_source "URLSession 은 UpdateChecker.swift 에서만" \
+    '\bURLSession\b' \
+    'UpdateChecker.swift'
 forbid_source "Keychain/Security API 미사용" \
     '\b(SecItem[A-Za-z]*|SecKeychain[A-Za-z]*|kSecClass|LAContext)\b|import +Security'
 forbid_source "자격증명 파일 경로 미참조" \
@@ -89,9 +92,9 @@ confine_source "외부 프로세스는 ClaudeOfficialUsage.swift 에서만" \
 confine_source "파일 쓰기는 SettingsWriter.swift 에서만" \
     'FileHandle\(forWritingTo|FileHandle\(forUpdating|\.write\(to:|createFile\(atPath' \
     'SettingsWriter.swift'
-confine_source "URL 열기·클립보드는 InstallHelpCard.swift 에서만" \
+confine_source "URL 열기·클립보드는 InstallHelpCard/UpdateCard 에서만" \
     'NSWorkspace[^\n]*open|NSPasteboard' \
-    'InstallHelpCard.swift'
+    'InstallHelpCard.swift|UpdateCard.swift'
 forbid_source "클립보드 읽기 없음" \
     'pasteboardItems|\.string\(forType:|readObjects\(forClasses'
 forbid_source "전역 키보드 감시 없음" \
@@ -108,10 +111,10 @@ else
     signature=$(codesign -dv "$BUNDLE" 2>&1 || true)
     entitlements=$(codesign -d --entitlements - "$BUNDLE" 2>/dev/null | tr -d '\0' || true)
 
-    forbid_text "CFNetwork / Network / Security 프레임워크 미링크" \
-        'CFNetwork|/Network\.framework|Security\.framework' "$linked"
-    forbid_text "Keychain / URLSession 심볼 미임포트" \
-        'SecItemCopyMatching|SecKeychain|NSURLSession' "$undefined"
+    forbid_text "Network.framework / Security 프레임워크 미링크" \
+        '/Network\.framework|Security\.framework' "$linked"
+    forbid_text "Keychain 심볼 미임포트" \
+        'SecItemCopyMatching|SecKeychain' "$undefined"
     forbid_text "바이너리에 자격증명 문자열 없음" \
         'auth\.json|sk-ant-|sk-proj-|id_rsa' "$literals"
     forbid_text "네트워크 entitlement 없음" \

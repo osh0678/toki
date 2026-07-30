@@ -53,6 +53,13 @@ SIZE=$(du -h "$DMG" | cut -f1)
 ( cd dist && shasum -a 256 "${APP_NAME}-${VERSION}.dmg" > "${APP_NAME}-${VERSION}.dmg.sha256" )
 SHA=$(cut -d' ' -f1 < "${DMG}.sha256")
 
+# An unversioned copy too: GitHub serves release assets at
+# /releases/latest/download/<asset>, so a stable filename gives the README a
+# permanent direct-download link that never needs editing on a new version.
+STABLE="dist/${APP_NAME}.dmg"
+cp "$DMG" "$STABLE"
+( cd dist && shasum -a 256 "${APP_NAME}.dmg" > "${APP_NAME}.dmg.sha256" )
+
 echo
 echo "✅ ${DMG}  (${SIZE})"
 echo "   ${DMG}.sha256"
@@ -61,10 +68,12 @@ echo
 echo "   열기:   open ${DMG}"
 echo "   설치:   마운트된 이미지에서 Toki 를 Applications 로 드래그"
 echo
-echo "▸ 릴리스로 배포하려면"
-echo "   gh release create v${VERSION} ${DMG} ${DMG}.sha256 \\"
+echo "▸ 릴리스로 배포하려면 — 네 파일 모두 첨부해야 README 링크가 동작합니다"
+echo "   gh release create v${VERSION} \\"
+echo "       ${DMG} ${DMG}.sha256 ${STABLE} ${STABLE}.sha256 \\"
 echo "       --title \"Toki ${VERSION}\" --notes-file CHANGELOG.md"
-echo "   (gh 가 없으면 GitHub 웹 → Releases → Draft a new release 에서 두 파일 첨부)"
+echo "   (gh 가 없으면 GitHub 웹 → Releases → Draft a new release 에서 첨부)"
+echo "   ${APP_NAME}.dmg 가 README 의 영구 다운로드 링크 대상입니다"
 echo
 echo "   ⚠️  ad-hoc 서명이라 Apple 공증이 없습니다. 받는 쪽에서 처음 열 때"
 echo "       Gatekeeper 가 막으면 우클릭 → 열기, 또는 아래 한 줄로 해제:"

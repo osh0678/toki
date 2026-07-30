@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var showCodex: Bool
     @State private var showMenuBarPercent: Bool
     @State private var panelOpacity: Double
+    @State private var checkForUpdates: Bool
     @State private var useCLI: Bool
     @State private var refreshSeconds: Int
     @State private var officialMinutes: Int
@@ -30,6 +31,7 @@ struct SettingsView: View {
         _showCodex = State(initialValue: config.showCodex)
         _showMenuBarPercent = State(initialValue: config.showMenuBarPercent)
         _panelOpacity = State(initialValue: config.panelOpacity)
+        _checkForUpdates = State(initialValue: config.checkForUpdates)
         _useCLI = State(initialValue: config.useClaudeCLI)
         _refreshSeconds = State(initialValue: config.refreshSeconds)
         _officialMinutes = State(initialValue: max(1, config.officialRefreshSeconds / 60))
@@ -38,6 +40,9 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.cardSpacing) {
+            if let update = store.availableUpdate {
+                UpdateCard(update: update, currentVersion: UpdateChecker.currentVersion)
+            }
             statusCard
             claudeCard
             codexCard
@@ -150,6 +155,14 @@ struct SettingsView: View {
     private var commonCard: some View {
         SettingsCard {
             sectionTitle("공통")
+
+            toggleRow(
+                title: "업데이트 확인",
+                caption: "하루 1회 GitHub 릴리스만 조회 — Toki 의 유일한 네트워크 사용",
+                isOn: $checkForUpdates
+            )
+
+            Divider().opacity(0.22)
 
             toggleRow(
                 title: "메뉴바 퍼센트 표시",
@@ -286,6 +299,7 @@ struct SettingsView: View {
             showCodex: showCodex,
             showMenuBarPercent: showMenuBarPercent,
             panelOpacity: panelOpacity,
+            checkForUpdates: checkForUpdates,
             lookbackDays: lookbackDays,
             claudeFiveHourTokenLimit: store.config.claudeFiveHourTokenLimit,
             claudeWeeklyTokenLimit: store.config.claudeWeeklyTokenLimit

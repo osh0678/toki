@@ -20,6 +20,12 @@ final class UsageStore {
     private(set) var isRefreshing = false
     /// Advances on a timer so countdowns stay current between full refreshes.
     private(set) var clock: Date
+    /// Newer release, when one exists and update checks are enabled.
+    private(set) var availableUpdate: AvailableUpdate?
+
+    /// Once a day is plenty for a widget, and it keeps the single network request rare.
+    private static let updateCheckInterval: TimeInterval = 86_400
+    private var lastUpdateCheck: Date?
 
     /// Readable so the settings UI can seed its fields from the live configuration.
     private(set) var config: WidgetConfig
@@ -42,6 +48,7 @@ final class UsageStore {
     func start() {
         guard tickTask == nil else { return }
         refresh()
+        checkForUpdateIfDue()
 
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -51,6 +58,7 @@ final class UsageStore {
                 if self.isLocalRefreshDue || self.isOfficialRefreshDue(at: self.clock) {
                     self.refresh()
                 }
+                self.checkForUpdateIfDue()
             }
         }
     }
@@ -100,7 +108,28 @@ final class UsageStore {
         // Clearing the throttle means a newly enabled CLI (or shortened interval) takes
         // effect on this refresh rather than up to ten minutes later.
         lastOfficialAttempt = nil
+        // Re-check immediately so switching the setting on has a visible effect.
+        lastUpdateCheck = nil
         refresh(force: updated.useClaudeCLI)
+        checkForUpdateIfDue()
+    }
+
+    /// The one place Toki touches the network, and only when the user leaves it on.
+    private func checkForUpdateIfDue() {
+        guard config.checkForUpdates else {
+            availableUpdate = nil
+            return
+        }
+        if let lastUpdateCheck,
+           Date().timeIntervalSince(lastUpdateCheck) < Self.updateCheckInterval {
+            return
+        }
+        lastUpdateCheck = Date()
+
+        Task { [weak self] in
+            let found = await UpdateChecker.check(currentVersion: UpdateChecker.currentVersion)
+            self?.availableUpdate = found
+        }
     }
 
     /// Called when the panel opens, so opening it never shows stale figures.
