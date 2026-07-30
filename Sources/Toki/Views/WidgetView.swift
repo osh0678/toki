@@ -12,6 +12,9 @@ struct WidgetView: View {
     /// Hides the panel; the app keeps running in the menu bar.
     let onClose: () -> Void
     let onQuit: () -> Void
+    /// Reports the intrinsic height of the content so the window can be resized from
+    /// outside AppKit's layout pass. See `StatusItemController.applyContentHeight`.
+    let onHeightChange: (CGFloat) -> Void
 
     @State private var showingSettings = false
     @Namespace private var glassNamespace
@@ -88,6 +91,14 @@ struct WidgetView: View {
         // "arrived". Pinning the control state removes the delta: the panel always
         // renders active, whether or not it actually holds key.
         .environment(\.controlActiveState, .key)
+        // Measured here, where the height is still the content's own. Reporting it lets
+        // AppKit resize the window on its own terms instead of letting the layout engine
+        // drive the window size from inside a running display cycle, which crashed.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            onHeightChange(height)
+        }
     }
 
     private func toggleSettings() {
