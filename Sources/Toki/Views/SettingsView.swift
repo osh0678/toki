@@ -163,6 +163,23 @@ struct SettingsView: View {
         SettingsCard {
             sectionTitle("공통")
 
+            // Sits above the update toggles because that is the only context in which the
+            // number means anything: knowing the version matters when deciding whether to
+            // update, so the answer to "am I current?" belongs next to it.
+            HStack(spacing: 4) {
+                Text("버전")
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                Text(UpdateChecker.currentVersion)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.carrot)
+                Spacer(minLength: 4)
+                Text(updateStatus)
+                    .font(.system(size: 8.5, design: .rounded))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Divider().opacity(0.22)
+
             toggleRow(
                 title: "업데이트 확인",
                 caption: "하루 1회 GitHub 릴리스만 조회 — Toki 의 유일한 네트워크 사용",
@@ -236,6 +253,14 @@ struct SettingsView: View {
     }
 
     // MARK: - Rows
+
+    /// Reads the live toggle rather than the saved config, so switching checks off says
+    /// so immediately instead of leaving a stale "최신" that was never re-verified.
+    private var updateStatus: String {
+        guard checkForUpdates else { return "확인 안 함" }
+        guard let update = store.availableUpdate else { return "최신" }
+        return "새 버전 \(update.version)"
+    }
 
     private func sectionTitle(_ text: String) -> some View {
         Text(text)
