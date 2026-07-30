@@ -193,6 +193,8 @@ private struct NotConnectedCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.cardPadding)
-        .glassEffect(.regular.tint(Theme.amber.opacity(0.12)), in: .rect(cornerRadius: Theme.cardCornerRadius))
+        // Untinted for the same reason as `ProviderCard`: a tinted surface changes colour
+        // on the first click. The amber warning icon carries the signal.
+        .glassEffect(.regular, in: .rect(cornerRadius: Theme.cardCornerRadius))
     }
 }

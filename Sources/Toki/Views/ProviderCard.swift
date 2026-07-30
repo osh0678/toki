@@ -28,10 +28,11 @@ struct ProviderCard: View {
         }
         .padding(Theme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(
-            .regular.tint(accent.opacity(0.14)),
-            in: .rect(cornerRadius: Theme.cardCornerRadius)
-        )
+        // Untinted on purpose. A tinted glass surface only picks up its tint once the
+        // panel is interacted with, so the cards visibly turned orange and blue on the
+        // first click. Provider identity is carried by the header icon, the plan badge,
+        // and the meter instead — none of which shift with the panel's state.
+        .glassEffect(.regular, in: .rect(cornerRadius: Theme.cardCornerRadius))
         .overlay {
             // Rim light, so each card reads as a separate pane of glass rather than a
             // flat tinted rectangle.
