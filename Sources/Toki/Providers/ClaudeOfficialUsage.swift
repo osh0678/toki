@@ -82,6 +82,16 @@ enum ClaudeOfficialUsageReader {
         // Compile-time literals only — nothing here is caller-controlled.
         process.arguments = ["-p", "/usage", "--output-format", "json"]
         process.standardInput = FileHandle.nullDevice
+        // Without this the child inherits Toki's working directory, which for an app
+        // launched from Finder is `/` — so the CLI treats the entire filesystem root as
+        // its project directory. `~/.claude/projects/-` is the evidence that it had been
+        // doing exactly that. Anything protected the CLI touched from there raised a
+        // permission prompt in *Toki's* name, because a child's request is attributed to
+        // the responsible parent. Toki itself needs no such permission: it reads only
+        // `~/.claude`, `~/.codex`, and its own config, none of which are TCC-protected.
+        // The temporary directory is used because it already exists — creating one here
+        // would be a file write, which belongs to SettingsWriter/UpdateInstaller alone.
+        process.currentDirectoryURL = FileManager.default.temporaryDirectory
 
         let stdout = Pipe()
         process.standardOutput = stdout
