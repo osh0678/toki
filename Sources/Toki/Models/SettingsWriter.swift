@@ -24,6 +24,7 @@ enum SettingsWriter {
             "showMenuBarPercent": config.showMenuBarPercent,
             "panelOpacity": config.panelOpacity,
             "checkForUpdates": config.checkForUpdates,
+            "autoInstallUpdates": config.autoInstallUpdates,
             "lookbackDays": config.lookbackDays,
             "claude": claude
         ]
