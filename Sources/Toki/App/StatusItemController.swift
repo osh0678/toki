@@ -83,8 +83,12 @@ final class StatusItemController: NSObject {
 
     /// `nil` keeps the default menu bar colour; a colour means the quota is tight.
     private func tint(forPeak peak: Double) -> NSColor? {
-        if peak >= Theme.criticalThreshold { return NSColor(Theme.ember) }
-        if peak >= Theme.warningThreshold { return NSColor(Theme.amber) }
+        // Same clamp as `Theme.barColor`: the warning point is user-set and the critical
+        // one is not, so without this a low warning setting would show red before amber.
+        let warningRemaining = store.config.warningRemainingFraction
+        let remaining = 1 - peak
+        if remaining <= min(Theme.criticalRemaining, warningRemaining) { return NSColor(Theme.ember) }
+        if remaining <= warningRemaining { return NSColor(Theme.amber) }
         return nil
     }
 

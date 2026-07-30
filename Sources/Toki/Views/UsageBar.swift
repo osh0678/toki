@@ -15,9 +15,13 @@ struct UsageBar: View {
     let accent: Color
     let now: Date
 
+    @Environment(\.warningRemaining) private var warningRemaining
+
     private var used: Double { window.fraction ?? 0 }
     private var remaining: Double { max(0, 1 - used) }
-    private var tint: Color { Theme.barColor(forRemaining: remaining, accent: accent) }
+    private var tint: Color {
+        Theme.barColor(forRemaining: remaining, accent: accent, warningRemaining: warningRemaining)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
