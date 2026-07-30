@@ -126,9 +126,15 @@ enum ClaudeOfficialUsageReader {
     // MARK: - Parsing
 
     /// Matches lines such as:
-    /// `Current session: 24% used · resets Jul 30 at 3:59pm (Asia/Seoul)`
+    /// `Current session: 98% used · resets Jul 30 at 4pm (Asia/Seoul)`
+    /// `Current week (all models): 28% used · resets Jul 31 at 3:59pm (Asia/Seoul)`
+    ///
+    /// The minutes are **optional**: the CLI omits them on the hour, printing `4pm`
+    /// rather than `4:00pm`. Requiring them made the reset group fail to match, which
+    /// dropped the countdown while still parsing the percentage — a silent partial
+    /// match, so the card looked fine apart from the missing text.
     private static func pattern(forLabel label: String) -> String {
-        "\(label):\\s*(\\d+)%\\s*used(?:[^\\n]*?resets\\s+([A-Za-z]{3}\\s+\\d{1,2}\\s+at\\s+\\d{1,2}:\\d{2}[ap]m)\\s*\\(([^)]+)\\))?"
+        "\(label):\\s*(\\d+)%\\s*used(?:[^\\n]*?resets\\s+([A-Za-z]{3}\\s+\\d{1,2}\\s+at\\s+\\d{1,2}(?::\\d{2})?[ap]m)\\s*\\(([^)]+)\\))?"
     }
 
     private static func parseWindows(from report: String, now: Date) -> [UsageWindow] {
