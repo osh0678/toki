@@ -17,6 +17,15 @@ final class StatusItemController: NSObject {
     /// before the click action fires. Remembering when that happened lets a second
     /// click read as "close" instead of instantly reopening.
     private var lastHiddenAt: Date?
+    private var shownAt: Date?
+    private var outsideClickMonitor: Any?
+    private var escapeMonitor: Any?
+
+    private static let escapeKeyCode: UInt16 = 53
+
+    /// Ignore dismissal signals briefly after opening, so the activation that happens
+    /// while the panel appears cannot immediately close it again.
+    private static let dismissGrace: TimeInterval = 0.4
 
     init(store: UsageStore) {
         self.store = store
@@ -163,9 +172,84 @@ final class StatusItemController: NSObject {
         shown.orderFrontRegardless()
         shown.makeKey()
         statusItem.button?.highlight(true)
+        shownAt = Date()
+        startOutsideClickMonitor()
+        startEscapeMonitor()
 
         logPanelState(shown)
         store.refreshIfStale()
+    }
+
+    private func hidePanel() {
+        stopOutsideClickMonitor()
+        stopEscapeMonitor()
+        panel?.orderOut(nil)
+        statusItem.button?.highlight(false)
+        lastHiddenAt = Date()
+        shownAt = nil
+    }
+
+    private var isWithinDismissGrace: Bool {
+        guard let shownAt else { return false }
+        return Date().timeIntervalSince(shownAt) < Self.dismissGrace
+    }
+
+    /// Closes the panel when a click lands anywhere else.
+    ///
+    /// A global monitor receives only events delivered to *other* applications, so a
+    /// hit here already means "outside Toki" — no window coordinates are inspected.
+    /// Only mouse-down is watched (never keystrokes), the event value itself is
+    /// discarded, and the monitor exists only while the panel is on screen. Mouse
+    /// monitoring requires no accessibility or input-monitoring permission.
+    ///
+    /// This replaces dismissing on `didResignKey`: an accessory app is not guaranteed
+    /// to take key status at all, so that signal never arrived and the panel stayed up.
+    private func startOutsideClickMonitor() {
+        guard outsideClickMonitor == nil else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            // Event monitors are delivered on the main thread.
+            MainActor.assumeIsolated {
+                guard let self, !self.isWithinDismissGrace else { return }
+                self.hidePanel()
+            }
+        }
+    }
+
+    private func stopOutsideClickMonitor() {
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+        }
+        outsideClickMonitor = nil
+    }
+
+    /// Escape closes the panel.
+    ///
+    /// A *local* monitor only sees key events already delivered to Toki, so this needs
+    /// no input-monitoring permission — unlike a global keyboard monitor, which would
+    /// observe every keystroke on the machine and is deliberately not used. Returning
+    /// nil consumes the event so Escape does not also reach the panel's content.
+    private func startEscapeMonitor() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == Self.escapeKeyCode else { return event }
+            // Only a Bool crosses the isolation boundary: NSEvent is not Sendable, so it
+            // cannot be returned out of `assumeIsolated`.
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard let self, let panel = self.panel, panel.isVisible else { return false }
+                self.hidePanel()
+                return true
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    private func stopEscapeMonitor() {
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+        }
+        escapeMonitor = nil
     }
 
     /// Diagnostics for `TOKI_DEBUG_OPEN_PANEL=1`: without this, a panel that fails to
@@ -190,14 +274,14 @@ final class StatusItemController: NSObject {
         for line in lines { fputs("[toki] \(line)\n", stderr) }
     }
 
-    private func hidePanel() {
-        panel?.orderOut(nil)
-        statusItem.button?.highlight(false)
-        lastHiddenAt = Date()
+    @objc private func panelDidResignKey(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === panel, !isWithinDismissGrace else { return }
+        hidePanel()
     }
 
-    @objc private func panelDidResignKey(_ notification: Notification) {
-        guard (notification.object as? NSWindow) === panel else { return }
+    /// Covers ⌘Tab and Mission Control, which the click monitor cannot see.
+    @objc private func appDidResignActive() {
+        guard let panel, panel.isVisible, !isWithinDismissGrace else { return }
         hidePanel()
     }
 
@@ -245,6 +329,12 @@ final class StatusItemController: NSObject {
             selector: #selector(panelDidResize),
             name: NSWindow.didResizeNotification,
             object: panel
+        )
+        center.addObserver(
+            self,
+            selector: #selector(appDidResignActive),
+            name: NSApplication.didResignActiveNotification,
+            object: nil
         )
         return panel
     }

@@ -78,6 +78,7 @@ struct WidgetView: View {
             Button("새로고침") { store.refresh(force: true) }
             Button(showingSettings ? "사용량 보기" : "설정") { toggleSettings() }
             Button("패널 닫기", action: onClose)
+                .keyboardShortcut("w")
             Divider()
             Button("Toki 종료", action: onQuit)
         }
@@ -152,14 +153,6 @@ private struct TitleBar: View {
             .buttonStyle(.glass)
             .keyboardShortcut(",")
             .help(showingSettings ? "사용량 보기" : "설정")
-
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-            }
-            .buttonStyle(.glass)
-            .keyboardShortcut("w")
-            .help("패널 닫기 (Toki 는 메뉴바에 계속 실행)")
         }
     }
 }

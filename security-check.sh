@@ -89,6 +89,13 @@ confine_source "외부 프로세스는 ClaudeOfficialUsage.swift 에서만" \
 confine_source "파일 쓰기는 SettingsWriter.swift 에서만" \
     'FileHandle\(forWritingTo|FileHandle\(forUpdating|\.write\(to:|createFile\(atPath' \
     'SettingsWriter.swift'
+confine_source "URL 열기·클립보드는 InstallHelpCard.swift 에서만" \
+    'NSWorkspace[^\n]*open|NSPasteboard' \
+    'InstallHelpCard.swift'
+forbid_source "클립보드 읽기 없음" \
+    'pasteboardItems|\.string\(forType:|readObjects\(forClasses'
+forbid_source "전역 키보드 감시 없음" \
+    'CGEventTap|IOHIDManager|addGlobalMonitorForEvents\(matching: \[\.key'
 
 echo
 echo "── 바이너리 검사 ──────────────────────────────────"
