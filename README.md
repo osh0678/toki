@@ -279,6 +279,10 @@ build.sh · package-dmg.sh · security-check.sh
 버그 리포트와 PR 환영합니다. 코드를 고칠 때는 `./security-check.sh` 를 꼭 통과시켜 주세요 —
 실패는 README 와 SECURITY.md 에 적어둔 보증이 깨졌다는 뜻입니다.
 
+> 💡 **다른 AI 도구의 사용량 모니터링이 필요하신가요?**
+> Claude Code·Codex CLI 외에 모니터링하고 싶은 AI 도구가 있다면
+> [Issue](https://github.com/osh0678/toki/issues)에 남겨주세요. 검토 후 추가하겠습니다.
+
 ## 라이선스
 
 [MIT](LICENSE) — 자유롭게 쓰고, 고치고, 배포하세요.
