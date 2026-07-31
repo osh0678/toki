@@ -25,7 +25,25 @@ enum CodexUsageProvider {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex/sessions")
     }
 
-    static func read(now: Date) -> ProviderUsage {
+    /// `live` is a reading straight from `codex app-server` and always wins when present:
+    /// it reflects usage from every client, while the session logs only ever see what the
+    /// local CLI did. The log path below stays as the fallback for when Codex is absent,
+    /// logged out, or too old to answer.
+    static func read(now: Date, live: CodexOfficialUsage? = nil) -> ProviderUsage {
+        if let live {
+            return ProviderUsage(
+                id: providerID,
+                displayName: displayName,
+                symbol: symbol,
+                planLabel: planLabel(live.planType),
+                windows: live.windows,
+                todayTokens: todayTokens(calendar: Calendar.current, now: now),
+                todayCostUSD: nil,
+                note: "Codex 서버 실시간 조회 · 요청 소모 없음",
+                failure: nil
+            )
+        }
+
         let root = sessionsRoot
         guard FileManager.default.fileExists(atPath: root.path(percentEncoded: false)) else {
             return .unavailable(
@@ -144,7 +162,9 @@ enum CodexUsageProvider {
         )
     }
 
-    private static func label(forWindowMinutes minutes: Int) -> String {
+    /// Shared with `CodexOfficialUsageReader`, which reports the same windows from the
+    /// live JSON-RPC surface.
+    static func label(forWindowMinutes minutes: Int) -> String {
         switch minutes {
         case ..<60: "\(minutes)분"
         case 60: "1시간"
@@ -193,7 +213,8 @@ enum CodexUsageProvider {
 
     // MARK: - Plan
 
-    private static func planLabel(_ raw: String?) -> String? {
+    /// Shared with `CodexOfficialUsageReader`; the live surface reports the same plan.
+    static func planLabel(_ raw: String?) -> String? {
         guard let raw, !raw.isEmpty else { return nil }
         switch raw.lowercased() {
         case "free": return "Free"

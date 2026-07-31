@@ -46,6 +46,10 @@ final class UsageStore {
     private var official: ClaudeOfficialUsage?
     private var officialFailure: String?
     private var lastOfficialAttempt: Date?
+    /// Last live Codex reading, kept between refreshes so the panel is not re-querying
+    /// `codex app-server` on every 60-second local tick.
+    private var codexLive: CodexOfficialUsage?
+    private var lastCodexAttempt: Date?
     private var refreshTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
 
@@ -93,13 +97,22 @@ final class UsageStore {
         let now = Date()
         let fetchOfficial = force || isOfficialRefreshDue(at: now)
         if fetchOfficial { lastOfficialAttempt = now }
+        let fetchCodex = (force || isCodexRefreshDue(at: now)) && config.showCodex
+        if fetchCodex { lastCodexAttempt = now }
 
         let config = self.config
         let cached = official
+        let cachedCodex = codexLive
 
         refreshTask = Task { [weak self] in
             let collected = await Task.detached(priority: .utility) {
-                Self.collect(config: config, cachedOfficial: cached, fetchOfficial: fetchOfficial)
+                Self.collect(
+                    config: config,
+                    cachedOfficial: cached,
+                    fetchOfficial: fetchOfficial,
+                    cachedCodex: cachedCodex,
+                    fetchCodex: fetchCodex
+                )
             }.value
 
             guard let self else { return }
@@ -109,6 +122,9 @@ final class UsageStore {
             if collected.didFetchOfficial {
                 self.official = collected.official
                 self.officialFailure = collected.officialFailure
+            }
+            if collected.didFetchCodex {
+                self.codexLive = collected.codexLive
             }
             self.snapshot = collected.snapshot
             self.clock = collected.snapshot.capturedAt
@@ -124,6 +140,7 @@ final class UsageStore {
         // Clearing the throttle means a newly enabled CLI (or shortened interval) takes
         // effect on this refresh rather than up to ten minutes later.
         lastOfficialAttempt = nil
+        lastCodexAttempt = nil
         // Re-check immediately so switching the setting on has a visible effect.
         lastUpdateCheck = nil
         // Turning auto-install back on is an explicit request to try again, so a previous
@@ -207,11 +224,23 @@ final class UsageStore {
         return now.timeIntervalSince(lastOfficialAttempt) >= Double(config.officialRefreshSeconds)
     }
 
+    /// Codex is queried on the same interval as the official Claude figures but tracked
+    /// separately, because `isOfficialRefreshDue` is gated on `useClaudeCLI` — a setting
+    /// that says nothing about Codex. Sharing the timestamp would have meant switching
+    /// the Claude CLI off silently froze the Codex reading too.
+    private func isCodexRefreshDue(at now: Date) -> Bool {
+        guard config.showCodex else { return false }
+        guard let lastCodexAttempt else { return true }
+        return now.timeIntervalSince(lastCodexAttempt) >= Double(config.officialRefreshSeconds)
+    }
+
     private struct Collected: Sendable {
         let snapshot: UsageSnapshot
         let official: ClaudeOfficialUsage?
         let officialFailure: String?
         let didFetchOfficial: Bool
+        let codexLive: CodexOfficialUsage?
+        let didFetchCodex: Bool
     }
 
     /// Runs off the main actor. Each provider swallows its own I/O failures and
@@ -219,7 +248,9 @@ final class UsageStore {
     private nonisolated static func collect(
         config: WidgetConfig,
         cachedOfficial: ClaudeOfficialUsage?,
-        fetchOfficial: Bool
+        fetchOfficial: Bool,
+        cachedCodex: CodexOfficialUsage?,
+        fetchCodex: Bool
     ) -> Collected {
         let now = Date()
         var official = cachedOfficial
@@ -230,6 +261,14 @@ final class UsageStore {
             case .usage(let reading): official = reading
             case .failure(let reason): failure = reason
             }
+        }
+
+        // A failed live read keeps the previous one rather than clearing it: a stale
+        // server reading still beats the log snapshot, which is staler by construction.
+        // `CodexUsageProvider` falls back to the logs only when there has never been one.
+        var codexLive = cachedCodex
+        if fetchCodex, case .usage(let reading) = CodexOfficialUsageReader.read(now: now) {
+            codexLive = reading
         }
 
         // A provider switched off in settings is not read at all, so hiding it also
@@ -246,7 +285,7 @@ final class UsageStore {
             )
         }
         if config.showCodex {
-            providers.append(CodexUsageProvider.read(now: now))
+            providers.append(CodexUsageProvider.read(now: now, live: codexLive))
         }
 
         let snapshot = UsageSnapshot(providers: providers, capturedAt: now)
@@ -255,7 +294,9 @@ final class UsageStore {
             snapshot: snapshot,
             official: official,
             officialFailure: failure,
-            didFetchOfficial: fetchOfficial
+            didFetchOfficial: fetchOfficial,
+            codexLive: codexLive,
+            didFetchCodex: fetchCodex
         )
     }
 }

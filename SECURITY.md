@@ -28,6 +28,7 @@ Toki 가 다루는 두 도구의 자격증명 위치를 먼저 확인했습니�
 | `~/.codex/sessions/**/*.jsonl` | `payload.rate_limits.*`, `payload.info.total_token_usage.total_tokens` | 공식 사용률 · 토큰 수 |
 | `~/.config/toki/config.json` | 정수·불리언 몇 개 | 사용자 설정 (유일한 **쓰기** 대상) |
 | `claude -p "/usage" --output-format json` | stdout 의 `result` 문자열에서 `N% used` 와 초기화 시각 | Claude 공식 사용률 |
+| `codex app-server` (JSON-RPC `account/rateLimits/read`) | 응답의 `usedPercent`·`windowDurationMins`·`resetsAt` 숫자와 `planType` 문자열 | Codex 실시간 사용률 (요청·토큰 소모 없음) |
 | `https://api.github.com/repos/osh0678/toki/releases/latest` | 응답 JSON 의 `tag_name` **단 1개** | 새 버전 확인 (유일한 네트워크 사용, 설정에서 끌 수 있음) |
 
 ### `claude` CLI 호출 — 왜 이게 더 안전한가
@@ -64,7 +65,7 @@ Claude 공식 수치를 얻는 다른 방법은 Keychain 의 OAuth 토큰으로 
 |---|---|---|
 | G1 | 네트워크는 **업데이트 확인**과, 사용자가 켰을 때의 **업데이트 내려받기**뿐이고, 끄면 0건 | `URLSession` 은 `UpdateChecker.swift`·`UpdateInstaller.swift` 두 곳으로 한정 — 다른 파일에 나타나면 검사 실패. `NWConnection`·`CFStreamCreate`·`CFSocket`·`NSURLConnection` 미사용, `Network.framework` 미링크, 네트워크 entitlement 없음. 아래 § 업데이트 확인 참조 |
 | G2 | Keychain 접근 없음 | `SecItem*`/`SecKeychain*` 미사용, `Security.framework` 미링크, `SecItemCopyMatching` 심볼 미임포트 |
-| G3 | 외부 프로세스 실행은 **`ClaudeOfficialUsage.swift` 한 곳**뿐 | 다른 파일에서 `Process`/`NSTask`/`posix_spawn`/`popen`/`NSAppleScript` 가 나타나면 검사 실패. 셸(`/bin/sh` 등) 경유는 전면 금지 |
+| G3 | 외부 프로세스 실행은 **`ClaudeOfficialUsage.swift`·`CodexOfficialUsage.swift` 두 곳**뿐 | 다른 파일에서 `Process`/`NSTask`/`posix_spawn`/`popen`/`NSAppleScript` 가 나타나면 검사 실패. 셸(`/bin/sh` 등) 경유는 전면 금지. 두 파일 모두 실행 파일을 **절대 경로 고정 목록**에서만 찾고(`PATH`·환경변수·설정 파일 미참조), 인자는 컴파일 타임 상수뿐이며, stdout 상한과 타임아웃이 걸려 있습니다. `codex app-server` 는 명령 실행·파일 쓰기 메서드도 노출하므로 Toki 가 **조회 메서드만** 쓴다는 것을 별도 검사로 강제합니다 — 아래 § Codex 실시간 조회 참조 |
 | G4 | 디스크 쓰기는 **설정 파일 하나**와, 사용자가 켰을 때의 **Toki 자기 번들 교체**뿐 | `SettingsWriter.swift`·`UpdateInstaller.swift` 외의 파일에서 쓰기 API 가 나타나면 검사 실패. 검사 패턴은 `write(to:)` 류뿐 아니라 `replaceItemAt`·`moveItem`·`copyItem`·`removeItem`·`createDirectory` 까지 포함합니다 — 번들 교체는 바이트를 쓰지 않고 디렉터리를 옮기므로, 좁은 패턴이면 그냥 통과했을 것입니다. 설정 대상은 하드코딩된 `~/.config/toki/config.json`, 원자적 쓰기, 비밀정보 미포함. 번들 교체 대상은 `Bundle.main.bundleURL` 하나뿐이고 **Ed25519 서명 검증을 통과한 뒤에만** 일어납니다. 그 외 모든 파일 접근은 읽기 전용 |
 | G5 | 자격증명 경로 미참조 | 소스·바이너리 문자열 모두에 `auth.json`, `sk-ant-`, `sk-proj-`, `id_rsa` 없음 |
 | G6 | 경로 이탈 불가 | 심볼릭 링크 스킵 + 후보 파일이 루트 안에 있는지 정규화 경로로 재확인 |
@@ -118,6 +119,32 @@ GitHub 가 알게 되는 것은 임의의 웹 요청이 드러내는 것과 같�
 엔드포인트를 한 번 호출했다는 사실. 어느 계정이 얼마나 썼는지, 어떤 도구를 쓰는지는
 전송되지 않습니다.
 
+### Codex 실시간 조회 — 두 번째 서브프로세스를 허용한 이유
+
+Codex 사용률은 원래 `~/.codex/sessions` 로그를 파싱해서 얻었습니다. 그런데 그 로그는
+**Codex CLI 가 요청을 보낼 때만** 갱신되므로, 데스크톱 앱·웹·다른 기기에서 쓰면 로컬
+숫자가 멈춥니다. 실제로 28시간 묵은 "72% 남음" 을 보여주는 동안 계정 잔량은 47% 였습니다.
+틀린 숫자를 자신 있게 보여주는 상태였습니다.
+
+`codex app-server` 의 JSON-RPC `account/rateLimits/read` 로 바꿨습니다. Codex TUI 의
+`/usage` 가 쓰는 것과 같은 경로입니다.
+
+**Claude 위임과 같은 논리입니다.** 자격증명은 Toki 가 아니라 `codex app-server` 프로세스가
+자기 안에서 다루고, Toki 는 응답 JSON 의 **숫자와 플랜 문자열만** 읽습니다.
+`~/.codex/auth.json` 은 열지 않습니다. 오히려 Claude 쪽보다 나은 점이 하나 있습니다 —
+`claude -p "/usage"` 는 요청 1건을 소모하지만 이건 **순수 조회라 토큰·할당량을 쓰지
+않습니다.**
+
+**대신 위험은 더 큽니다.** 같은 소켓에 `command/exec`, `fs/writeFile`,
+`mcpServer/tool/call`, `thread/shellCommand` 가 함께 노출돼 있습니다. 즉 이 프로세스는
+마음만 먹으면 임의 명령 실행 통로가 됩니다. 그래서 Toki 가 보내는 메서드를 딱 둘
+(`initialize`, `account/rateLimits/read`)로 고정하고, **그 외 변경성 메서드가 소스 어디에든
+나타나면 빌드가 실패하도록** 검사를 추가했습니다. 편의를 위해 메서드 하나를 더 부르고
+싶어지는 지점이 정확히 여기입니다.
+
+조회에 실패하면(Codex 미설치·미로그인·타임아웃) 기존 로그 파싱으로 폴백하고, 그 값이
+오래되면 나이를 함께 표시합니다.
+
 ### 자동 설치 — 원격 파일이 실행 코드가 되는 지점
 
 이 문서의 이전 판은 자동 설치를 **금지**했습니다. 근거는 "ad-hoc 서명이라 교체될 번들의
@@ -162,7 +189,7 @@ GitHub 가 알게 되는 것은 임의의 웹 요청이 드러내는 것과 같�
 
 ## 4. 검증 방법 — 자동화
 
-`./security-check.sh` 가 매 빌드 후 위 보증을 기계적으로 검증합니다. 소스 검사 11건 +
+`./security-check.sh` 가 매 빌드 후 위 보증을 기계적으로 검증합니다. 소스 검사 12건 +
 컴파일된 바이너리 검사 6건, 하나라도 깨지면 종료 코드 1. `package-dmg.sh` 는 이 게이트를
 통과하지 못하면 dmg 를 만들지 않습니다.
 

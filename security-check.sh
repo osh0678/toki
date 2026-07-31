@@ -96,9 +96,15 @@ forbid_source "자격증명 파일 경로 미참조" \
     'auth\.json|credentials|id_[rd]sa|\.netrc|\.ssh|ANTHROPIC_API_KEY|OPENAI_API_KEY'
 forbid_source "셸 경유 실행 없음" \
     '/bin/(sh|bash|zsh)|NSUserUnixTask'
-confine_source "외부 프로세스는 ClaudeOfficialUsage.swift 에서만" \
+confine_source "외부 프로세스는 Claude/CodexOfficialUsage.swift 에서만" \
     '\b(Process\(\)|NSTask|posix_spawn|execv[pe]?|NSAppleScript)\b|popen\(|Darwin\.system\(' \
-    'ClaudeOfficialUsage.swift'
+    'ClaudeOfficialUsage.swift|CodexOfficialUsage.swift'
+# `codex app-server` exposes command execution, file writes, and MCP tool calls on the
+# same JSON-RPC socket Toki uses for its usage query. Toki speaks exactly two methods to
+# it — initialize, and a read-only rate-limit read — and this check keeps it that way:
+# any mutating method appearing anywhere in the sources fails the build.
+forbid_source "codex app-server 는 조회 메서드만 사용" \
+    '"(turn/start|turn/steer|thread/start|thread/resume|thread/shellCommand|command/exec|fs/writeFile|fs/remove|fs/copy|mcpServer/tool/call|config/value/write|config/batchWrite|plugin/install)"'
 # Widened beyond byte-writing APIs to the FileManager calls that move directories
 # around: the updater replaces an app bundle without ever calling `write(to:)`, so the
 # original pattern would have waved it through.
