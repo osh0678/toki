@@ -166,6 +166,11 @@ final class StatusItemController: NSObject {
         let shown = panel ?? makePanel()
         panel = shown
 
+        // Bumped before the first layout so the view returns to the dashboard while it is
+        // still off screen, rather than showing settings for a frame and animating away.
+        panelSession += 1
+        hosting?.rootView = makeRootView()
+
         resize(shown)
         shown.anchor(below: statusItem.button)
 
@@ -337,15 +342,24 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func makePanel() -> GlassPanel {
-        let controller = NSHostingController(
-            rootView: WidgetView(
-                store: store,
-                onClose: { [weak self] in self?.hidePanel() },
-                onQuit: { NSApp.terminate(nil) },
-                onHeightChange: { [weak self] height in self?.applyContentHeight(height) }
-            )
+    /// Counts openings. The panel is built once and merely ordered out when dismissed, so
+    /// SwiftUI keeps its `@State` — including which screen was showing. Handing the view a
+    /// value that changes on every open gives it something to notice, so it can return to
+    /// the dashboard rather than reopening on whatever screen it was left on.
+    private var panelSession = 0
+
+    private func makeRootView() -> WidgetView {
+        WidgetView(
+            store: store,
+            panelSession: panelSession,
+            onClose: { [weak self] in self?.hidePanel() },
+            onQuit: { NSApp.terminate(nil) },
+            onHeightChange: { [weak self] height in self?.applyContentHeight(height) }
         )
+    }
+
+    private func makePanel() -> GlassPanel {
+        let controller = NSHostingController(rootView: makeRootView())
         // Deliberately *not* `.preferredContentSize`. That option routes every SwiftUI
         // size change through the Auto Layout engine, so the hosting view's frame is
         // updated from inside `NSView.layout` — and SwiftUI answers that frame change by

@@ -10,6 +10,10 @@ import SwiftUI
 /// refraction that makes the material read as glass.
 struct WidgetView: View {
     let store: UsageStore
+    /// Increments each time the panel is opened. See `panelSession` in
+    /// `StatusItemController`: the panel is reused rather than rebuilt, so this is the
+    /// only signal the view gets that it is being shown afresh.
+    let panelSession: Int
     /// Hides the panel; the app keeps running in the menu bar.
     let onClose: () -> Void
     let onQuit: () -> Void
@@ -88,6 +92,16 @@ struct WidgetView: View {
         // switched to the active one on the first click. That switch is the colour that
         // "arrived". Pinning the control state removes the delta: the panel always
         // renders active, whether or not it actually holds key.
+        // Settings is somewhere you go, not somewhere you live: reopening the panel should
+        // answer "how much is left?", which is what it is for. Without this the panel
+        // reopens on settings indefinitely because dismissing it only orders the window
+        // out — the view, and its state, stay alive.
+        //
+        // No animation: the change happens while the panel is off screen, and animating
+        // it would play the settings-to-dashboard transition on every single open.
+        .onChange(of: panelSession) { _, _ in
+            showingSettings = false
+        }
         .environment(\.controlActiveState, .key)
         // Injected once here, where the config actually lives, so every bar below reads
         // the same warning point.
