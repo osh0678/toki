@@ -66,4 +66,26 @@ struct UsageSnapshot: Sendable {
     var peakFraction: Double? {
         providers.flatMap(\.windows).compactMap(\.fraction).max()
     }
+
+    /// What the menu bar should show.
+    ///
+    /// Falls back to the tightest window whenever the chosen one is absent — the provider
+    /// may be switched off, not installed, or simply not reporting that window yet (Codex
+    /// often reports only a weekly limit). Showing the tightest figure is a better failure
+    /// than showing nothing, and it is what the setting defaults to anyway.
+    func menuBarFraction(preferring windowID: String?) -> Double? {
+        guard let windowID,
+              let chosen = providers.flatMap(\.windows).first(where: { $0.id == windowID }),
+              let fraction = chosen.fraction
+        else { return peakFraction }
+        return fraction
+    }
+
+    /// Windows currently available to represent the menu bar, paired with the provider
+    /// they belong to so settings can label them unambiguously.
+    var selectableWindows: [(providerName: String, window: UsageWindow)] {
+        providers.flatMap { provider in
+            provider.windows.map { (provider.displayName, $0) }
+        }
+    }
 }

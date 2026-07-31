@@ -15,7 +15,7 @@ enum SettingsWriter {
         if let fiveHour = config.claudeFiveHourTokenLimit { claude["fiveHourTokenLimit"] = fiveHour }
         if let weekly = config.claudeWeeklyTokenLimit { claude["weeklyTokenLimit"] = weekly }
 
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "refreshSeconds": config.refreshSeconds,
             "officialRefreshSeconds": config.officialRefreshSeconds,
             "useClaudeCLI": config.useClaudeCLI,
@@ -29,6 +29,12 @@ enum SettingsWriter {
             "lookbackDays": config.lookbackDays,
             "claude": claude
         ]
+
+        // Written only when set. An absent key is exactly what `load()` reads as "자동",
+        // so the default costs the file nothing and needs no null to represent it.
+        if let windowID = config.menuBarWindowID {
+            payload["menuBarWindowID"] = windowID
+        }
 
         do {
             try FileManager.default.createDirectory(

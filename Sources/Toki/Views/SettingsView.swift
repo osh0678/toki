@@ -15,6 +15,9 @@ struct SettingsView: View {
     @State private var showClaude: Bool
     @State private var showCodex: Bool
     @State private var showMenuBarPercent: Bool
+    /// Empty string stands for 자동: `Picker` tags cannot be `nil`. Converted back in
+    /// `edited`.
+    @State private var menuBarWindowID: String
     @State private var panelOpacity: Double
     /// Held as a Double because `Slider` binds to a floating-point value; rounded back
     /// to a whole percent in `edited`.
@@ -34,6 +37,7 @@ struct SettingsView: View {
         _showClaude = State(initialValue: config.showClaude)
         _showCodex = State(initialValue: config.showCodex)
         _showMenuBarPercent = State(initialValue: config.showMenuBarPercent)
+        _menuBarWindowID = State(initialValue: config.menuBarWindowID ?? "")
         _panelOpacity = State(initialValue: config.panelOpacity)
         _warningRemainingPercent = State(initialValue: Double(config.warningRemainingPercent))
         _checkForUpdates = State(initialValue: config.checkForUpdates)
@@ -212,6 +216,12 @@ struct SettingsView: View {
                 isOn: $showMenuBarPercent
             )
 
+            menuBarSourceRow
+                // The colour still follows this choice when the number is hidden, but the
+                // setting reads as being about the number, so it dims with it.
+                .disabled(!showMenuBarPercent)
+                .opacity(showMenuBarPercent ? 1 : 0.45)
+
             Divider().opacity(0.22)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -289,6 +299,51 @@ struct SettingsView: View {
         guard checkForUpdates else { return "확인 안 함" }
         guard let update = store.availableUpdate else { return "최신" }
         return "새 버전 \(update.version)"
+    }
+
+    /// Which window the menu bar number represents.
+    ///
+    /// The options are built from the live snapshot rather than a fixed list, because
+    /// which windows exist is the server's decision — Codex frequently reports only a
+    /// weekly limit, and a provider switched off has none at all. A previously chosen
+    /// window that has since disappeared is still listed, marked, so the setting shows
+    /// what it is actually set to instead of silently snapping back to 자동.
+    private var menuBarSourceRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("메뉴바 기준")
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                Text("어느 한도를 대표로 보여줄지 고릅니다")
+                    .font(.system(size: 8.5, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("메뉴바 기준", selection: $menuBarWindowID) {
+                Text("자동 — 가장 빡빡한 쪽").tag("")
+                ForEach(store.snapshot.selectableWindows, id: \.window.id) { entry in
+                    Text("\(entry.providerName) · \(entry.window.label)")
+                        .tag(entry.window.id)
+                }
+                if isChosenWindowMissing {
+                    Text("이전 선택 (현재 없음)").tag(menuBarWindowID)
+                }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            .font(.system(size: 9.5, design: .rounded))
+
+            if isChosenWindowMissing {
+                Text("선택한 한도가 지금은 보고되지 않아 가장 빡빡한 쪽을 보여줍니다")
+                    .font(.system(size: 8.5, design: .rounded))
+                    .foregroundStyle(Theme.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var isChosenWindowMissing: Bool {
+        !menuBarWindowID.isEmpty
+            && !store.snapshot.selectableWindows.contains { $0.window.id == menuBarWindowID }
     }
 
     private func sectionTitle(_ text: String) -> some View {
@@ -373,6 +428,7 @@ struct SettingsView: View {
             showClaude: showClaude,
             showCodex: showCodex,
             showMenuBarPercent: showMenuBarPercent,
+            menuBarWindowID: menuBarWindowID.isEmpty ? nil : menuBarWindowID,
             panelOpacity: panelOpacity,
             warningRemainingPercent: Int(warningRemainingPercent.rounded()),
             checkForUpdates: checkForUpdates,

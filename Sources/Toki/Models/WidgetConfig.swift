@@ -29,8 +29,15 @@ struct WidgetConfig: Sendable, Equatable {
     /// Per-provider visibility. A hidden provider is not even read.
     let showClaude: Bool
     let showCodex: Bool
-    /// Whether the menu bar shows the tightest remaining percentage next to the icon.
+    /// Whether the menu bar shows a remaining percentage next to the icon.
     let showMenuBarPercent: Bool
+    /// Which window that percentage represents, by `UsageWindow.id`. `nil` means the
+    /// tightest window across every provider, which is the default.
+    ///
+    /// A string in the config file, but never treated as one: it is only ever compared
+    /// against ids the providers themselves produced, so a tampered value simply matches
+    /// nothing and falls back to the tightest window. It cannot name a path.
+    let menuBarWindowID: String?
     /// 0 = bare glass (most transparent), 1 = fully opaque HUD material.
     let panelOpacity: Double
     /// Remaining headroom, as a whole percent, below which bars and the menu bar icon
@@ -60,6 +67,7 @@ struct WidgetConfig: Sendable, Equatable {
         showClaude: true,
         showCodex: true,
         showMenuBarPercent: true,
+        menuBarWindowID: nil,
         panelOpacity: defaultPanelOpacity,
         warningRemainingPercent: defaultWarningRemainingPercent,
         checkForUpdates: true,
@@ -101,6 +109,11 @@ struct WidgetConfig: Sendable, Equatable {
             showClaude: root["showClaude"] as? Bool ?? true,
             showCodex: root["showCodex"] as? Bool ?? true,
             showMenuBarPercent: root["showMenuBarPercent"] as? Bool ?? true,
+            // Length-capped so a hand-edited file cannot push an unbounded string into
+            // the comparison; anything that matches no real window id is ignored anyway.
+            menuBarWindowID: (root["menuBarWindowID"] as? String).flatMap {
+                $0.isEmpty || $0.count > 64 ? nil : $0
+            },
             panelOpacity: min(1, max(0, (root["panelOpacity"] as? NSNumber)?.doubleValue
                 ?? defaultPanelOpacity)),
             warningRemainingPercent: min(maxWarningRemainingPercent,

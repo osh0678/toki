@@ -59,7 +59,8 @@ final class StatusItemController: NSObject {
     private func updateButton() {
         guard let button = statusItem.button else { return }
 
-        guard let peak = store.snapshot.peakFraction else {
+        guard let peak = store.snapshot.menuBarFraction(preferring: store.config.menuBarWindowID)
+        else {
             button.title = ""
             button.contentTintColor = nil
             button.toolTip = "Toki — 사용량 읽는 중"
@@ -97,6 +98,12 @@ final class StatusItemController: NSObject {
     private func observeStore() {
         withObservationTracking {
             _ = store.snapshot
+            // Tracked as well as the snapshot, because three menu bar settings — whether
+            // the percentage is shown at all, which window it represents, and the warning
+            // threshold that colours it — change nothing about the data. Without this the
+            // button kept its old value until some later refresh happened to replace the
+            // snapshot, so the setting looked like it had not applied.
+            _ = store.config
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.updateButton()
