@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Root layout of the panel: title bar, then either the provider cards or settings.
@@ -17,6 +18,9 @@ struct WidgetView: View {
     let onHeightChange: (CGFloat) -> Void
 
     @State private var showingSettings = false
+    /// Natural height of the scrolling content, measured so the panel can be exactly as
+    /// tall as it needs to be up to the screen ceiling. See `scrollableBody`.
+    @State private var scrollContentHeight: CGFloat = 0
     @Namespace private var glassNamespace
 
     /// Providers that actually have data. A provider whose source is missing is not
@@ -39,15 +43,7 @@ struct WidgetView: View {
                     onClose: onClose
                 )
 
-                if showingSettings {
-                    SettingsView(store: store) {
-                        withAnimation(.smooth(duration: 0.3)) { showingSettings = false }
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-                } else {
-                    cards
-                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-                }
+                scrollableBody
 
                 // Settings has no footer: the line that used to sit here only restated
                 // what the controls themselves already make obvious.
@@ -104,6 +100,48 @@ struct WidgetView: View {
         } action: { height in
             onHeightChange(height)
         }
+    }
+
+    /// The part of the panel that can outgrow the screen.
+    ///
+    /// Settings is far taller than the usage cards, and the window height is capped at
+    /// the screen (`StatusItemController.usableHeight`) — so without a scroll view the
+    /// bottom of settings was simply unreachable, with no indication anything had been
+    /// cut off.
+    ///
+    /// The height is pinned to the measured content rather than left to the scroll view,
+    /// because a `ScrollView` takes every point it is offered. Left unpinned it would
+    /// stretch the panel to full screen height even to show three short cards. While the
+    /// measurement is still zero the frame stays `nil`, so the first layout pass reports
+    /// the natural height and the window never sizes itself from a placeholder.
+    private var scrollableBody: some View {
+        ScrollView(.vertical) {
+            Group {
+                if showingSettings {
+                    SettingsView(store: store) {
+                        withAnimation(.smooth(duration: 0.3)) { showingSettings = false }
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                } else {
+                    cards
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                scrollContentHeight = height
+            }
+        }
+        .frame(height: scrollContentHeight > 0 ? min(scrollContentHeight, scrollCeiling) : nil)
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    /// Room the scrolling region may occupy, leaving the title bar, footer, padding and
+    /// the menu bar itself accounted for.
+    private var scrollCeiling: CGFloat {
+        let visible = NSScreen.main?.visibleFrame.height ?? Theme.panelFallbackScreenHeight
+        return max(Theme.panelMinScrollHeight, visible - Theme.panelChromeAllowance)
     }
 
     private func toggleSettings() {

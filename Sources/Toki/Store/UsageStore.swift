@@ -28,6 +28,14 @@ final class UsageStore {
     /// The version installation has already been attempted for, successful or not.
     /// Without it the daily check would retry a failing install indefinitely.
     private var installAttemptedVersion: String?
+    /// The bundle `install` actually replaced.
+    ///
+    /// Kept rather than recomputed: `replaceItemAt` swaps directories, which moves the
+    /// *running* bundle into the staging directory. After a successful install,
+    /// `Bundle.main.bundleURL` can therefore point at a path that has been moved out
+    /// from under the process — relaunching from it would start the old copy, or nothing
+    /// at all once staging is cleaned up.
+    private var installedBundleURL: URL?
 
     /// Once a day is plenty for a widget, and it keeps the single network request rare.
     private static let updateCheckInterval: TimeInterval = 86_400
@@ -165,7 +173,8 @@ final class UsageStore {
                 // Verification happens inside `install`, before anything is written; it
                 // reports `.verifying` here only so the UI can say what is happening.
                 self?.updateInstall = .verifying
-                _ = try await UpdateInstaller.install(update)
+                let replaced = try await UpdateInstaller.install(update)
+                self?.installedBundleURL = replaced
                 self?.updateInstall = .installed(update.version)
             } catch {
                 let reason = (error as? LocalizedError)?.errorDescription
@@ -178,8 +187,8 @@ final class UsageStore {
     /// Quits and relaunches so the already-installed bundle takes effect. Only
     /// meaningful once `updateInstall` reports `.installed`.
     func restartForUpdate() {
-        guard case .installed = updateInstall else { return }
-        UpdateInstaller.relaunchInstalled()
+        guard case .installed = updateInstall, let installedBundleURL else { return }
+        UpdateInstaller.relaunch(from: installedBundleURL)
     }
 
     /// Called when the panel opens, so opening it never shows stale figures.
