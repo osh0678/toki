@@ -21,6 +21,16 @@ enum Theme {
     static let meterSegmentSpacing: CGFloat = 2
     static let meterHeight: CGFloat = 13
 
+    /// Space the panel needs outside its scrolling region: title bar, footer, outer
+    /// padding, and clearance from the menu bar. Subtracted from the visible screen
+    /// height to decide how tall the scrolling part may grow. See `WidgetView`.
+    static let panelChromeAllowance: CGFloat = 150
+    /// Floor for the scrolling region, so an unusually short screen still leaves
+    /// something scrollable rather than collapsing the panel to nothing.
+    static let panelMinScrollHeight: CGFloat = 220
+    /// Used only when no screen can be identified, which should not happen in practice.
+    static let panelFallbackScreenHeight: CGFloat = 900
+
     /// Used-fractions at which a window starts reading as "getting tight" / "nearly out".
     static let warningThreshold = 0.75
     static let criticalThreshold = 0.90

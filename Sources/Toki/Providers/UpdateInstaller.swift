@@ -142,14 +142,10 @@ enum UpdateInstaller {
     /// A new instance is requested explicitly: without it LaunchServices sees a running
     /// app with the same bundle identifier and simply activates the old process, which
     /// would leave the update applied on disk but never actually running.
-    /// Relaunches the bundle this process was started from — which, after a successful
-    /// `install`, is the new version, because the replacement happened in place.
-    @MainActor
-    static func relaunchInstalled() {
-        guard let bundleURL = runningBundleURL() else { return }
-        relaunch(from: bundleURL)
-    }
-
+    /// `bundleURL` must be the value `install` returned. Recomputing it from
+    /// `Bundle.main` here would be wrong: `replaceItemAt` swaps directories, so by this
+    /// point the running process's own bundle has been moved into the staging directory
+    /// and removed along with it.
     @MainActor
     static func relaunch(from bundleURL: URL) {
         let configuration = NSWorkspace.OpenConfiguration()

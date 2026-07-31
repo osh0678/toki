@@ -48,7 +48,7 @@ enum CodexUsageProvider {
             )
         }
 
-        guard let limits = latestRateLimits(in: recentFiles.prefix(maxProbedFiles)) else {
+        guard let snapshot = latestRateLimits(in: recentFiles.prefix(maxProbedFiles)) else {
             return .unavailable(
                 id: providerID,
                 displayName: displayName,
@@ -57,6 +57,7 @@ enum CodexUsageProvider {
             )
         }
 
+        let limits = snapshot.limits
         let windows = [limits.object("primary"), limits.object("secondary")]
             .enumerated()
             .compactMap { slot, payload in payload.flatMap { window(from: $0, slot: slot, now: now) } }
@@ -71,16 +72,16 @@ enum CodexUsageProvider {
             // Codex CLI usage is covered by a subscription, so a per-token figure
             // would be a fabricated number rather than a useful one.
             todayCostUSD: nil,
-            note: windows.isEmpty
-                ? "Codex 가 아직 사용률을 보고하지 않았습니다"
-                : "Codex 서버가 보고한 공식 사용률입니다",
+            note: note(capturedAt: snapshot.capturedAt, now: now, hasWindows: !windows.isEmpty),
             failure: nil
         )
     }
 
     // MARK: - Snapshot lookup
 
-    private static func latestRateLimits(in files: some Sequence<URL>) -> [String: Any]? {
+    private static func latestRateLimits(
+        in files: some Sequence<URL>
+    ) -> (limits: [String: Any], capturedAt: Date?)? {
         for file in files {
             guard let lines = try? JSONLReader.tailLines(of: file, containing: rateLimitNeedle) else { continue }
             // Newest record wins; a half-written trailing line simply fails to parse.
@@ -88,11 +89,45 @@ enum CodexUsageProvider {
                 guard let root = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
                       let limits = root.object("payload")?.object("rate_limits")
                 else { continue }
-                return limits
+                return (limits, timestamp(from: root["timestamp"] as? String))
             }
         }
         return nil
     }
+
+    /// Codex writes ISO 8601 in UTC, usually with fractional seconds. Both spellings are
+    /// tried because the fractional part is not guaranteed, and a parse failure here must
+    /// degrade to "age unknown" rather than discarding an otherwise valid snapshot.
+    private static func timestamp(from raw: String?) -> Date? {
+        guard let raw else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = withFraction.date(from: raw) { return parsed }
+        return ISO8601DateFormatter().date(from: raw)
+    }
+
+    /// Says how old the reading is, because Toki cannot refresh it.
+    ///
+    /// These percentages are only written when Codex itself makes a request, so between
+    /// sessions the number is frozen. Presenting a day-old figure as the current one is
+    /// what makes the card look wrong; stating the age costs nothing and is true.
+    /// Fetching a fresh value would need either a throwaway model request or the OAuth
+    /// token in `~/.codex/auth.json` — the first spends the quota it is measuring, the
+    /// second breaks G1 and G2. See SECURITY.md.
+    private static func note(capturedAt: Date?, now: Date, hasWindows: Bool) -> String {
+        guard hasWindows else { return "Codex 가 아직 사용률을 보고하지 않았습니다" }
+        guard let capturedAt else { return "Codex 서버가 보고한 공식 사용률입니다" }
+
+        let age = now.timeIntervalSince(capturedAt)
+        guard age >= staleAfter else {
+            return "Codex 서버 보고값 · \(Display.relativeAge(age)) 기준"
+        }
+        return "Codex 서버 보고값 · \(Display.relativeAge(age)) 기준 — Codex 를 다시 쓰면 갱신됩니다"
+    }
+
+    /// Past this, the reading is old enough that saying so matters more than not
+    /// cluttering the card.
+    private static let staleAfter: TimeInterval = 6 * 3600
 
     private static func window(from payload: [String: Any], slot: Int, now: Date) -> UsageWindow? {
         guard let percent = payload.doubleValue("used_percent") else { return nil }
