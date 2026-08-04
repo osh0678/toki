@@ -59,27 +59,100 @@ final class StatusItemController: NSObject {
     private func updateButton() {
         guard let button = statusItem.button else { return }
 
-        guard let peak = store.snapshot.menuBarFraction(preferring: store.config.menuBarWindowID)
+        guard let reading = store.snapshot.menuBarReading(preferring: store.config.menuBarWindowID)
         else {
-            button.title = ""
+            button.attributedTitle = NSAttributedString(string: "")
             button.contentTintColor = nil
             button.toolTip = "Toki — 사용량 읽는 중"
             return
         }
 
+        let peak = reading.fraction
         let remaining = max(0, 1 - peak)
-        button.toolTip = "Toki — 남은 여유 \(Display.percent(remaining))"
+        button.toolTip = "Toki — \(providerName(for: reading.providerID)) 남은 여유 "
+            + Display.percent(remaining)
 
         // The percentage next to the icon is optional; some people want the menu bar
         // to stay quiet until something is actually running low.
         guard store.config.showMenuBarPercent else {
-            button.title = ""
+            button.attributedTitle = NSAttributedString(string: "")
             button.contentTintColor = tint(forPeak: peak)
             return
         }
 
-        button.title = " \(Display.percent(remaining))"
+        button.attributedTitle = menuBarTitle(
+            remaining: remaining,
+            symbol: providerSymbol(for: reading.providerID),
+            colour: tint(forPeak: peak)
+        )
         button.contentTintColor = tint(forPeak: peak)
+    }
+
+    /// `" 47% ✳"` — the percentage, then the provider's own symbol.
+    ///
+    /// The same SF Symbols the cards use, so the mark in the menu bar and the icon on the
+    /// card are recognisably the same thing. A letter was tried first and read as noise at
+    /// the size a menu bar allows; a glyph carries at 11pt where "C" did not.
+    ///
+    /// The colour is applied to the symbol explicitly. `contentTintColor` styles the
+    /// button's own image but does not reach an image embedded in an attributed title,
+    /// and a template image inside a text attachment does not pick up the text colour
+    /// either — so the warning colour has to be baked into the symbol configuration.
+    private func menuBarTitle(
+        remaining: Double,
+        symbol: String,
+        colour: NSColor?
+    ) -> NSAttributedString {
+        let text = colour ?? .labelColor
+        let title = NSMutableAttributedString(
+            string: " \(Display.percent(remaining))",
+            attributes: [
+                .font: NSFont.menuBarFont(ofSize: 0),
+                .foregroundColor: text
+            ]
+        )
+
+        guard !symbol.isEmpty,
+              let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                  .withSymbolConfiguration(
+                      NSImage.SymbolConfiguration(
+                          pointSize: Theme.menuBarMarkPointSize,
+                          weight: .semibold
+                      )
+                      .applying(NSImage.SymbolConfiguration(hierarchicalColor: text))
+                  )
+        else { return title }
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = CGRect(
+            x: 0,
+            y: Theme.menuBarMarkBaselineOffset,
+            width: image.size.width,
+            height: image.size.height
+        )
+
+        title.append(NSAttributedString(string: " "))
+        title.append(NSAttributedString(attachment: attachment))
+        return title
+    }
+
+    /// Reuses each provider's card symbol rather than inventing a menu bar one, so the
+    /// two places agree.
+    private func providerSymbol(for providerID: String) -> String {
+        switch providerID {
+        case ClaudeUsageProvider.providerID: ClaudeUsageProvider.symbol
+        case CodexUsageProvider.providerID: CodexUsageProvider.symbol
+        default: ""
+        }
+    }
+
+    private func providerName(for providerID: String) -> String {
+        switch providerID {
+        case ClaudeUsageProvider.providerID: ClaudeUsageProvider.displayName
+        case CodexUsageProvider.providerID: CodexUsageProvider.displayName
+        default: "사용량"
+        }
     }
 
     /// `nil` keeps the default menu bar colour; a colour means the quota is tight.

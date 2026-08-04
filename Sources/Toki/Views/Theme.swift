@@ -21,6 +21,12 @@ enum Theme {
     static let meterSegmentSpacing: CGFloat = 2
     static let meterHeight: CGFloat = 13
 
+    /// The provider glyph trailing the menu bar percentage. Sized to sit just under the
+    /// percentage's cap height so it reads as a mark on the number rather than competing
+    /// with it, and nudged down to sit on the same optical line.
+    static let menuBarMarkPointSize: CGFloat = 10
+    static let menuBarMarkBaselineOffset: CGFloat = -1
+
     /// Space the panel needs outside its scrolling region: title bar, footer, outer
     /// padding, and clearance from the menu bar. Subtracted from the visible screen
     /// height to decide how tall the scrolling part may grow. See `WidgetView`.

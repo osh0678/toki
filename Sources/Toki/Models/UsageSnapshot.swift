@@ -63,6 +63,13 @@ struct UsageSnapshot: Sendable {
 
     /// Highest usage fraction across every provider window — the single number the
     /// menu bar shows, so "am I about to run out?" is answerable at a glance.
+    /// What the menu bar is currently showing, and whose number it is.
+    struct MenuBarReading: Sendable {
+        let fraction: Double
+        /// Which provider the figure came from, so the menu bar can say so.
+        let providerID: String
+    }
+
     var peakFraction: Double? {
         providers.flatMap(\.windows).compactMap(\.fraction).max()
     }
@@ -73,12 +80,20 @@ struct UsageSnapshot: Sendable {
     /// may be switched off, not installed, or simply not reporting that window yet (Codex
     /// often reports only a weekly limit). Showing the tightest figure is a better failure
     /// than showing nothing, and it is what the setting defaults to anyway.
-    func menuBarFraction(preferring windowID: String?) -> Double? {
-        guard let windowID,
-              let chosen = providers.flatMap(\.windows).first(where: { $0.id == windowID }),
-              let fraction = chosen.fraction
-        else { return peakFraction }
-        return fraction
+    func menuBarReading(preferring windowID: String?) -> MenuBarReading? {
+        let candidates = providers.flatMap { provider in
+            provider.windows.compactMap { window in
+                window.fraction.map { (providerID: provider.id, windowID: window.id, fraction: $0) }
+            }
+        }
+
+        if let windowID, let chosen = candidates.first(where: { $0.windowID == windowID }) {
+            return MenuBarReading(fraction: chosen.fraction, providerID: chosen.providerID)
+        }
+        // Which provider is tightest changes as usage moves, so the caller reads it back
+        // from here rather than assuming it.
+        guard let tightest = candidates.max(by: { $0.fraction < $1.fraction }) else { return nil }
+        return MenuBarReading(fraction: tightest.fraction, providerID: tightest.providerID)
     }
 
     /// Windows currently available to represent the menu bar, paired with the provider

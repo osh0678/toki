@@ -37,6 +37,9 @@ struct ClaudeUsageEntry: Sendable {
 enum ClaudeUsageProvider {
     static let providerID = "claude"
     static let displayName = "Claude Code"
+    /// Mirrors `CodexUsageProvider.symbol`. Shared with the menu bar, which marks the
+    /// figure it is showing with the same glyph the card carries.
+    static let symbol = "sparkle"
     static let sessionWindowDuration: TimeInterval = 5 * 60 * 60
     static let weeklyWindowDays = 7
 
@@ -66,7 +69,7 @@ enum ClaudeUsageProvider {
             return .unavailable(
                 id: providerID,
                 displayName: displayName,
-                symbol: "sparkle",
+                symbol: symbol,
                 reason: "~/.claude/projects 를 찾을 수 없습니다"
             )
         }
@@ -76,7 +79,7 @@ enum ClaudeUsageProvider {
             return .unavailable(
                 id: providerID,
                 displayName: displayName,
-                symbol: "sparkle",
+                symbol: symbol,
                 reason: "조회 기간을 계산할 수 없습니다"
             )
         }
@@ -86,7 +89,7 @@ enum ClaudeUsageProvider {
             return .unavailable(
                 id: providerID,
                 displayName: displayName,
-                symbol: "sparkle",
+                symbol: symbol,
                 reason: officialFailure ?? "최근 \(config.lookbackDays)일간 사용 기록이 없습니다"
             )
         }
@@ -195,7 +198,7 @@ enum ClaudeUsageProvider {
         return ProviderUsage(
             id: providerID,
             displayName: displayName,
-            symbol: "sparkle",
+            symbol: symbol,
             planLabel: planLabel(),
             windows: official?.windows ?? [
                 window(
