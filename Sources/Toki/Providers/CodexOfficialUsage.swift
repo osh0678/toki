@@ -22,6 +22,8 @@ struct CodexOfficialUsage: Sendable {
 /// Constrained the same way as the Claude reader:
 /// * the executable comes from a fixed list of absolute paths, never `PATH`, the
 ///   environment, or the config file;
+/// * the child's `PATH` is a fixed list too, present only so an npm launcher can find
+///   Node — it never influences which executable Toki picks;
 /// * arguments and both JSON-RPC payloads are compile-time literals, so nothing a caller
 ///   supplies can reach the child;
 /// * no shell is involved, so there is nothing to quote or escape;
@@ -40,14 +42,57 @@ enum CodexOfficialUsageReader {
     private static let initializeID = 1
     private static let rateLimitsID = 2
 
+#if arch(arm64)
+    private static let vendorPackage = "darwin-arm64"
+    private static let vendorTriple = "aarch64-apple-darwin"
+#else
+    private static let vendorPackage = "darwin-x64"
+    private static let vendorTriple = "x86_64-apple-darwin"
+#endif
+
+    /// npm ships Codex as a `#!/usr/bin/env node` launcher sitting beside the real,
+    /// per-platform binary. Toki is started by LaunchServices, whose `PATH` is only
+    /// `/usr/bin:/bin:/usr/sbin:/sbin`, and Node installs into none of those — so when
+    /// codex 0.146.0 turned what had been a native `bin/codex` into that launcher, every
+    /// live read started failing with `env: node: No such file or directory`. The
+    /// vendored binary needs no interpreter, so it is tried first; the launchers stay for
+    /// installs that do put a native file there, Homebrew among them.
     private static var candidateExecutables: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return [
+        let nodeModules = [
+            home.appending(path: ".local/lib/node_modules"),
+            URL(filePath: "/opt/homebrew/lib/node_modules"),
+            URL(filePath: "/usr/local/lib/node_modules")
+        ]
+        let vendored = nodeModules.map {
+            $0.appending(
+                path: "@openai/codex/node_modules/@openai/codex-\(vendorPackage)"
+                    + "/vendor/\(vendorTriple)/bin/codex"
+            )
+        }
+        let launchers = [
             home.appending(path: ".local/bin/codex"),
             URL(filePath: "/opt/homebrew/bin/codex"),
             URL(filePath: "/usr/local/bin/codex"),
             URL(filePath: "/usr/bin/codex")
         ]
+        return vendored + launchers
+    }
+
+    /// Fixed, and used only so a launcher that needs an interpreter can find one. Which
+    /// executable Toki runs is still decided entirely by `candidateExecutables`: nothing
+    /// here lets the environment, `PATH`, or the config file name a different program.
+    private static var childSearchPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            home.appending(path: ".local/bin").path(percentEncoded: false),
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ].joined(separator: ":")
     }
 
     enum Outcome: Sendable {
@@ -136,6 +181,10 @@ enum CodexOfficialUsageReader {
         process.executableURL = executable
         // Compile-time literal, like the Claude reader's arguments.
         process.arguments = ["app-server"]
+        // Only so the npm launcher can reach Node; see `childSearchPath`.
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = childSearchPath
+        process.environment = environment
         // Same reasoning as `ClaudeOfficialUsageReader`: an app launched from Finder has
         // `/` as its working directory, and a child inheriting that can wander into
         // protected locations, raising permission prompts in Toki's name.
@@ -234,7 +283,7 @@ enum CodexOfficialUsageReader {
         let minutes = payload.intValue("windowDurationMins")
 
         return UsageWindow(
-            id: "codex-window-\(slot)",
+            id: CodexUsageProvider.windowID(forWindowMinutes: minutes, slot: slot),
             label: minutes.map(CodexUsageProvider.label(forWindowMinutes:))
                 ?? (slot == 0 ? "1차 한도" : "2차 한도"),
             fraction: min(1.0, max(0.0, percent / 100.0)),

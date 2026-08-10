@@ -152,7 +152,7 @@ enum CodexUsageProvider {
         let minutes = payload.intValue("window_minutes")
 
         return UsageWindow(
-            id: "codex-window-\(slot)",
+            id: windowID(forWindowMinutes: minutes, slot: slot),
             label: minutes.map(label(forWindowMinutes:)) ?? (slot == 0 ? "1차 한도" : "2차 한도"),
             fraction: min(1.0, max(0.0, percent / 100.0)),
             usedTokens: nil,
@@ -160,6 +160,21 @@ enum CodexUsageProvider {
             resetsAt: resetDate(from: payload, now: now),
             isEstimated: false
         )
+    }
+
+    /// Names a window by how long it is rather than by where it sat in the response.
+    ///
+    /// Codex 0.146.0 dropped `secondary` and promoted the weekly limit into `primary`.
+    /// Under slot-based ids that silently repointed `codex-window-0` from the 5-hour
+    /// limit to the weekly one, taking any menu bar selection naming it along with it.
+    /// Keyed on duration, an id keeps meaning the same window for as long as Codex
+    /// reports one, and the live and log readers agree on it.
+    ///
+    /// Shared with `CodexOfficialUsageReader`, which reports the same windows from the
+    /// live JSON-RPC surface.
+    static func windowID(forWindowMinutes minutes: Int?, slot: Int) -> String {
+        guard let minutes else { return "codex-window-slot-\(slot)" }
+        return "codex-window-\(minutes)m"
     }
 
     /// Shared with `CodexOfficialUsageReader`, which reports the same windows from the
