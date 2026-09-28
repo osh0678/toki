@@ -28,6 +28,9 @@ struct SettingsView: View {
     @State private var refreshSeconds: Int
     @State private var officialMinutes: Int
     @State private var lookbackDays: Int
+    /// Mirrors the system's login item status, not the config file — see `LaunchAtLogin`.
+    @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    @State private var launchNeedsApproval = LaunchAtLogin.needsApproval
     @State private var status: String?
 
     init(store: UsageStore, onDone: @escaping () -> Void) {
@@ -76,6 +79,7 @@ struct SettingsView: View {
         // to forget. The config file is tiny and written atomically, so doing it per
         // change is cheaper than the risk of losing a setting.
         .onChange(of: edited) { _, config in persist(config) }
+        .onChange(of: launchAtLogin) { _, isOn in applyLaunchAtLogin(isOn) }
     }
 
     // MARK: - Sections
@@ -210,6 +214,10 @@ struct SettingsView: View {
 
             Divider().opacity(0.22)
 
+            launchAtLoginRow
+
+            Divider().opacity(0.22)
+
             toggleRow(
                 title: "메뉴바 퍼센트 표시",
                 caption: "끄면 토끼 아이콘만 남고 색으로만 알립니다",
@@ -299,6 +307,28 @@ struct SettingsView: View {
         guard checkForUpdates else { return "확인 안 함" }
         guard let update = store.availableUpdate else { return "최신" }
         return "새 버전 \(update.version)"
+    }
+
+    private var launchAtLoginRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            toggleRow(
+                title: "부팅 시 자동 실행",
+                caption: "컴퓨터를 켜면 메뉴바에 자동으로 나타납니다",
+                isOn: $launchAtLogin
+            )
+
+            if launchNeedsApproval {
+                HStack(spacing: 4) {
+                    Text("시스템 설정에서 허용해야 적용됩니다")
+                        .font(.system(size: 8.5, design: .rounded))
+                        .foregroundStyle(Theme.amber)
+                    Spacer(minLength: 4)
+                    Button("열기") { LaunchAtLogin.openSystemSettings() }
+                        .controlSize(.mini)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                }
+            }
+        }
     }
 
     /// Which window the menu bar number represents.
@@ -439,6 +469,19 @@ struct SettingsView: View {
             claudeFiveHourTokenLimit: store.config.claudeFiveHourTokenLimit,
             claudeWeeklyTokenLimit: store.config.claudeWeeklyTokenLimit
         )
+    }
+
+    /// Registers or removes the login item. On failure the switch snaps back to what
+    /// the system actually holds, so it never claims a state that did not take.
+    private func applyLaunchAtLogin(_ isOn: Bool) {
+        guard isOn != LaunchAtLogin.isEnabled else {
+            launchNeedsApproval = LaunchAtLogin.needsApproval
+            return
+        }
+        let failure = LaunchAtLogin.setEnabled(isOn)
+        launchAtLogin = LaunchAtLogin.isEnabled
+        launchNeedsApproval = LaunchAtLogin.needsApproval
+        status = failure ?? (isOn ? "자동 실행 켜짐" : "자동 실행 꺼짐")
     }
 
     /// Applies to the running widget, then persists. A write failure is surfaced
