@@ -13,8 +13,16 @@ import Observation
 @MainActor
 @Observable
 final class UsageStore {
-    /// How often the relative "resets in" labels are re-evaluated.
-    private static let tickInterval = Duration.seconds(10)
+    /// How often the relative "resets in" labels are re-evaluated while the panel is on
+    /// screen.
+    private static let visibleTickInterval = Duration.seconds(10)
+    /// With the panel closed there is no countdown for anyone to read, so the wake-up
+    /// drops to the local refresh cadence. Holding the ten-second beat woke the process
+    /// six times a minute to recompute text that was not being displayed.
+    private static let hiddenTickInterval = Duration.seconds(60)
+    /// Slack on the sleep, so macOS can group this wake-up with timers it was already
+    /// going to service rather than scheduling one for Toki alone.
+    private static let tickTolerance = Duration.seconds(5)
 
     private(set) var snapshot: UsageSnapshot
     private(set) var isRefreshing = false
@@ -52,6 +60,8 @@ final class UsageStore {
     private var lastCodexAttempt: Date?
     private var refreshTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
+    /// Drives the tick cadence; see `setPanelVisible`.
+    private var isPanelVisible = false
 
     init(config: WidgetConfig = .load(), now: Date = Date()) {
         self.config = config
@@ -67,10 +77,33 @@ final class UsageStore {
         guard tickTask == nil else { return }
         refresh()
         checkForUpdateIfDue()
+        startTicking()
+    }
 
+    /// Told by the status item when the panel appears or disappears.
+    ///
+    /// The tick exists to keep "2시간 31분 후 초기화" honest, and nothing reads that while
+    /// the panel is closed — so a closed panel is worth six times fewer wake-ups.
+    func setPanelVisible(_ visible: Bool) {
+        guard isPanelVisible != visible else { return }
+        isPanelVisible = visible
+        // Only opening needs a restart, so the faster beat applies now rather than after
+        // the minute-long sleep already in flight finishes. Closing is picked up by the
+        // next tick on its own.
+        guard visible, tickTask != nil else { return }
+        tickTask?.cancel()
+        startTicking()
+    }
+
+    private var currentTickInterval: Duration {
+        isPanelVisible ? Self.visibleTickInterval : Self.hiddenTickInterval
+    }
+
+    private func startTicking() {
         tickTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.tickInterval)
+                let interval = self?.currentTickInterval ?? Self.hiddenTickInterval
+                try? await Task.sleep(for: interval, tolerance: Self.tickTolerance)
                 guard let self, !Task.isCancelled else { return }
                 self.clock = Date()
                 if self.isLocalRefreshDue || self.isOfficialRefreshDue(at: self.clock) {

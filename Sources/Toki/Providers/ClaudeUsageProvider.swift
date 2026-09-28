@@ -106,19 +106,45 @@ enum ClaudeUsageProvider {
 
     // MARK: - Log loading
 
+    /// Session logs are append-only, so a file whose size and modification date are
+    /// unchanged since the last refresh parses to exactly what it parsed to last time.
+    /// Re-reading it would be pure waste — and at a 14-day lookback that waste was the
+    /// dominant cost of the whole widget. See `ClaudeLogCache`.
     private static func loadEntries(under root: URL, since cutoff: Date) -> [ClaudeUsageEntry] {
         let parser = TimestampParser()
-        var byKey: [String: ClaudeUsageEntry] = [:]
+        let files = JSONLReader.sessionFiles(under: root, modifiedSince: cutoff)
+        let cache = ClaudeLogCache.shared
+        // Bound the cache to the window we just walked, before adding anything to it.
+        cache.prune(to: Set(files.map(\.path)))
 
-        for file in JSONLReader.sessionFiles(under: root, modifiedSince: cutoff) {
-            // A read failure on one session log must not blank the whole widget.
-            try? JSONLReader.forEachLine(of: file, containing: usageNeedle) { line in
-                guard let entry = parse(line: line, parser: parser), entry.timestamp >= cutoff else { return }
+        var byKey: [String: ClaudeUsageEntry] = [:]
+        for file in files {
+            let parsed = cache.entries(for: file) ?? parseAndCache(file, parser: parser, into: cache)
+            // The cutoff is applied here rather than while parsing: it moves forward on
+            // every refresh, so filtering before caching would poison the cached list.
+            for entry in parsed where entry.timestamp >= cutoff {
                 byKey[entry.dedupeKey] = entry
             }
         }
 
         return byKey.values.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Reads one log in full and remembers the result. Only reached for a file that is
+    /// new or has actually changed.
+    private static func parseAndCache(
+        _ file: JSONLReader.SessionFile,
+        parser: TimestampParser,
+        into cache: ClaudeLogCache
+    ) -> [ClaudeUsageEntry] {
+        var entries: [ClaudeUsageEntry] = []
+        // A read failure on one session log must not blank the whole widget.
+        try? JSONLReader.forEachLine(of: file.url, containing: usageNeedle) { line in
+            guard let entry = parse(line: line, parser: parser) else { return }
+            entries.append(entry)
+        }
+        cache.store(entries, for: file)
+        return entries
     }
 
     private static func parse(line: Data, parser: TimestampParser) -> ClaudeUsageEntry? {

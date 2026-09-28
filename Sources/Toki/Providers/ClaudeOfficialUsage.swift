@@ -27,6 +27,9 @@ enum ClaudeOfficialUsageReader {
     /// Maximum stdout we will buffer, to bound memory if the CLI misbehaves.
     private static let outputByteLimit = 256 * 1024
     private static let timeout: TimeInterval = 30
+    /// How long the child gets to actually exit once it has closed stdout. Reaching this
+    /// means it wrote its answer and then hung, so it is killed rather than waited on.
+    private static let exitGrace: TimeInterval = 2
 
     /// Absolute locations we are willing to execute. Nothing extends this list at
     /// runtime — a hijacked `PATH` cannot redirect Toki to another binary.
@@ -76,6 +79,31 @@ enum ClaudeOfficialUsageReader {
         }
     }
 
+    /// Collects stdout on a background queue, so the deadline holds even if the CLI
+    /// stops writing without exiting.
+    ///
+    /// `readToEnd()` blocked until EOF, which meant the timeout that followed it could
+    /// never fire on the case it was written for — and once it returned, a `usleep` loop
+    /// polled `isRunning` twenty times a second for as long as the child stayed up.
+    private final class OutputBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+
+        /// Returns true once the cap is reached and there is nothing left worth reading.
+        func append(_ chunk: Data) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            data.append(chunk)
+            return data.count >= outputByteLimit
+        }
+
+        var collected: Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return data
+        }
+    }
+
     private static func runCLI(executable: URL) -> (text: String?, failure: String?) {
         let process = Process()
         process.executableURL = executable
@@ -97,28 +125,45 @@ enum ClaudeOfficialUsageReader {
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
 
+        // Both waits below are signalled, never polled. Installed before `run()` so the
+        // handler cannot be missed by a child that exits immediately.
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+
         do {
             try process.run()
         } catch {
             return (nil, "claude CLI 실행 실패")
         }
 
-        // Read before waiting, so a large response cannot deadlock on a full pipe.
-        let data = (try? stdout.fileHandleForReading.readToEnd()) ?? Data()
-
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            usleep(50_000)
+        // Drained on another queue, so a large response cannot deadlock on a full pipe.
+        let buffer = OutputBuffer()
+        let drained = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            let handle = stdout.fileHandleForReading
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }          // EOF
+                if buffer.append(chunk) { break }   // cap reached
+            }
+            drained.signal()
         }
-        if process.isRunning {
+
+        guard drained.wait(timeout: .now() + timeout) != .timedOut else {
             process.terminate()
             return (nil, "claude CLI 응답 시간 초과")
         }
+        // stdout is closed by this point, so the child is finishing rather than working.
+        guard exited.wait(timeout: .now() + exitGrace) != .timedOut else {
+            process.terminate()
+            return (nil, "claude CLI 응답 시간 초과")
+        }
+
         guard process.terminationStatus == 0 else {
             return (nil, "claude CLI 오류 (exit \(process.terminationStatus))")
         }
 
-        guard let text = String(data: data.prefix(outputByteLimit), encoding: .utf8) else {
+        guard let text = String(data: buffer.collected.prefix(outputByteLimit), encoding: .utf8) else {
             return (nil, "CLI 출력을 읽지 못했습니다")
         }
         return (text, nil)

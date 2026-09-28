@@ -268,6 +268,8 @@ final class StatusItemController: NSObject {
         startOutsideClickMonitor()
 
         logPanelState(shown)
+        // Countdown labels are only worth a fast tick while they are on screen.
+        store.setPanelVisible(true)
         store.refreshIfStale()
     }
 
@@ -277,6 +279,7 @@ final class StatusItemController: NSObject {
         statusItem.button?.highlight(false)
         lastHiddenAt = Date()
         shownAt = nil
+        store.setPanelVisible(false)
     }
 
     private var isWithinDismissGrace: Bool {

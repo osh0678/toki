@@ -40,14 +40,26 @@ enum JSONLReader {
         return matches
     }
 
+    /// One session log worth reading, carrying the two facts that decide whether it
+    /// needs reading at all. The walk already asks the filesystem for both, so handing
+    /// them to the caller costs nothing and saves a second `stat` per file.
+    struct SessionFile: Sendable, Hashable {
+        let url: URL
+        let byteSize: Int
+        let modified: Date
+
+        /// Cache identity. Canonicalising is the walk's job, not this type's.
+        var path: String { url.path(percentEncoded: false) }
+    }
+
     /// `*.jsonl` files under `root` modified at or after `since`, newest first.
     ///
     /// Symlinks are skipped and every candidate is re-checked to still resolve
     /// inside `root`, so a symlinked directory planted in the log tree cannot make
     /// Toki open a file elsewhere on the disk.
-    static func sessionFiles(under root: URL, modifiedSince since: Date) -> [URL] {
+    static func sessionFiles(under root: URL, modifiedSince since: Date) -> [SessionFile] {
         let keys: [URLResourceKey] = [
-            .contentModificationDateKey, .isRegularFileKey, .isSymbolicLinkKey
+            .contentModificationDateKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey
         ]
         guard let walker = FileManager.default.enumerator(
             at: root,
@@ -58,7 +70,7 @@ enum JSONLReader {
         let rootPath = canonicalPath(of: root)
         let rootPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
 
-        var found: [(url: URL, modified: Date)] = []
+        var found: [SessionFile] = []
         for case let url as URL in walker {
             guard url.pathExtension == "jsonl",
                   let values = try? url.resourceValues(forKeys: Set(keys)),
@@ -66,12 +78,13 @@ enum JSONLReader {
                   values.isRegularFile == true,
                   let modified = values.contentModificationDate,
                   modified >= since,
+                  let byteSize = values.fileSize,
                   canonicalPath(of: url).hasPrefix(rootPrefix)
             else { continue }
-            found.append((url, modified))
+            found.append(SessionFile(url: url, byteSize: byteSize, modified: modified))
         }
 
-        return found.sorted { $0.modified > $1.modified }.map(\.url)
+        return found.sorted { $0.modified > $1.modified }
     }
 
     private static func canonicalPath(of url: URL) -> String {

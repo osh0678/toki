@@ -30,6 +30,16 @@ enum CodexUsageProvider {
     /// local CLI did. The log path below stays as the fallback for when Codex is absent,
     /// logged out, or too old to answer.
     static func read(now: Date, live: CodexOfficialUsage? = nil) -> ProviderUsage {
+        let root = sessionsRoot
+        let calendar = Calendar.current
+        let cutoff = calendar.date(byAdding: .day, value: -snapshotLookbackDays, to: now) ?? now
+        // One directory walk feeds both figures. The rate-limit snapshot and today's
+        // token total used to enumerate `~/.codex/sessions` separately, so every refresh
+        // walked the same tree twice for numbers that come out of the same set of files.
+        let recentFiles = JSONLReader.sessionFiles(under: root, modifiedSince: cutoff)
+        let today = calendar.startOfDay(for: now)
+        let todayTotal = todayTokens(in: recentFiles.filter { $0.modified >= today })
+
         if let live {
             return ProviderUsage(
                 id: providerID,
@@ -37,14 +47,13 @@ enum CodexUsageProvider {
                 symbol: symbol,
                 planLabel: planLabel(live.planType),
                 windows: live.windows,
-                todayTokens: todayTokens(calendar: Calendar.current, now: now),
+                todayTokens: todayTotal,
                 todayCostUSD: nil,
                 note: "Codex 서버 실시간 조회 · 요청 소모 없음",
                 failure: nil
             )
         }
 
-        let root = sessionsRoot
         guard FileManager.default.fileExists(atPath: root.path(percentEncoded: false)) else {
             return .unavailable(
                 id: providerID,
@@ -54,9 +63,6 @@ enum CodexUsageProvider {
             )
         }
 
-        let calendar = Calendar.current
-        let cutoff = calendar.date(byAdding: .day, value: -snapshotLookbackDays, to: now) ?? now
-        let recentFiles = JSONLReader.sessionFiles(under: root, modifiedSince: cutoff)
         guard !recentFiles.isEmpty else {
             return .unavailable(
                 id: providerID,
@@ -86,7 +92,7 @@ enum CodexUsageProvider {
             symbol: symbol,
             planLabel: planLabel(limits["plan_type"] as? String),
             windows: windows,
-            todayTokens: todayTokens(calendar: calendar, now: now),
+            todayTokens: todayTotal,
             // Codex CLI usage is covered by a subscription, so a per-token figure
             // would be a fabricated number rather than a useful one.
             todayCostUSD: nil,
@@ -98,10 +104,11 @@ enum CodexUsageProvider {
     // MARK: - Snapshot lookup
 
     private static func latestRateLimits(
-        in files: some Sequence<URL>
+        in files: some Sequence<JSONLReader.SessionFile>
     ) -> (limits: [String: Any], capturedAt: Date?)? {
         for file in files {
-            guard let lines = try? JSONLReader.tailLines(of: file, containing: rateLimitNeedle) else { continue }
+            guard let lines = try? JSONLReader.tailLines(of: file.url, containing: rateLimitNeedle)
+            else { continue }
             // Newest record wins; a half-written trailing line simply fails to parse.
             for line in lines.reversed() {
                 guard let root = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
@@ -205,13 +212,13 @@ enum CodexUsageProvider {
     /// Sums each of today's sessions' final cumulative token count. Sessions that
     /// started yesterday and continued into today are counted in full, so treat this
     /// as "tokens across sessions touched today".
-    private static func todayTokens(calendar: Calendar, now: Date) -> Int? {
-        let today = calendar.startOfDay(for: now)
+    private static func todayTokens(in files: [JSONLReader.SessionFile]) -> Int? {
         var total = 0
         var sawAnything = false
 
-        for file in JSONLReader.sessionFiles(under: sessionsRoot, modifiedSince: today) {
-            guard let lines = try? JSONLReader.tailLines(of: file, containing: tokenUsageNeedle) else { continue }
+        for file in files {
+            guard let lines = try? JSONLReader.tailLines(of: file.url, containing: tokenUsageNeedle)
+            else { continue }
             for line in lines.reversed() {
                 guard let root = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
                       let usage = root.object("payload")?.object("info")?.object("total_token_usage"),
