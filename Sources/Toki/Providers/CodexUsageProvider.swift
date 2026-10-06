@@ -29,7 +29,15 @@ enum CodexUsageProvider {
     /// it reflects usage from every client, while the session logs only ever see what the
     /// local CLI did. The log path below stays as the fallback for when Codex is absent,
     /// logged out, or too old to answer.
-    static func read(now: Date, live: CodexOfficialUsage? = nil) -> ProviderUsage {
+    ///
+    /// `liveFailure` is why the live read failed. It is shown only when the log fallback
+    /// has nothing either — otherwise "no recent sessions" would hide that the actual
+    /// problem is Toki failing to reach Codex at all.
+    static func read(
+        now: Date,
+        live: CodexOfficialUsage? = nil,
+        liveFailure: String? = nil
+    ) -> ProviderUsage {
         let root = sessionsRoot
         let calendar = Calendar.current
         let cutoff = calendar.date(byAdding: .day, value: -snapshotLookbackDays, to: now) ?? now
@@ -54,31 +62,25 @@ enum CodexUsageProvider {
             )
         }
 
-        guard FileManager.default.fileExists(atPath: root.path(percentEncoded: false)) else {
-            return .unavailable(
+        func unavailable(_ logReason: String) -> ProviderUsage {
+            .unavailable(
                 id: providerID,
                 displayName: displayName,
                 symbol: symbol,
-                reason: "~/.codex/sessions 를 찾을 수 없습니다"
+                reason: liveFailure.map { "실시간 조회 실패: \($0) · \(logReason)" } ?? logReason
             )
+        }
+
+        guard FileManager.default.fileExists(atPath: root.path(percentEncoded: false)) else {
+            return unavailable("~/.codex/sessions 를 찾을 수 없습니다")
         }
 
         guard !recentFiles.isEmpty else {
-            return .unavailable(
-                id: providerID,
-                displayName: displayName,
-                symbol: symbol,
-                reason: "최근 \(snapshotLookbackDays)일간 Codex 세션이 없습니다"
-            )
+            return unavailable("최근 \(snapshotLookbackDays)일간 Codex 세션이 없습니다")
         }
 
         guard let snapshot = latestRateLimits(in: recentFiles.prefix(maxProbedFiles)) else {
-            return .unavailable(
-                id: providerID,
-                displayName: displayName,
-                symbol: symbol,
-                reason: "사용률 스냅샷을 찾지 못했습니다"
-            )
+            return unavailable("사용률 스냅샷을 찾지 못했습니다")
         }
 
         let limits = snapshot.limits

@@ -57,6 +57,9 @@ final class UsageStore {
     /// Last live Codex reading, kept between refreshes so the panel is not re-querying
     /// `codex app-server` on every 60-second local tick.
     private var codexLive: CodexOfficialUsage?
+    /// Why the last live Codex read failed, kept so the card can name the real cause
+    /// instead of only the log fallback's "no recent sessions".
+    private var codexLiveFailure: String?
     private var lastCodexAttempt: Date?
     private var refreshTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
@@ -136,6 +139,7 @@ final class UsageStore {
         let config = self.config
         let cached = official
         let cachedCodex = codexLive
+        let cachedCodexFailure = codexLiveFailure
 
         refreshTask = Task { [weak self] in
             let collected = await Task.detached(priority: .utility) {
@@ -144,6 +148,7 @@ final class UsageStore {
                     cachedOfficial: cached,
                     fetchOfficial: fetchOfficial,
                     cachedCodex: cachedCodex,
+                    cachedCodexFailure: cachedCodexFailure,
                     fetchCodex: fetchCodex
                 )
             }.value
@@ -158,6 +163,7 @@ final class UsageStore {
             }
             if collected.didFetchCodex {
                 self.codexLive = collected.codexLive
+                self.codexLiveFailure = collected.codexLiveFailure
             }
             self.snapshot = collected.snapshot
             self.clock = collected.snapshot.capturedAt
@@ -273,6 +279,7 @@ final class UsageStore {
         let officialFailure: String?
         let didFetchOfficial: Bool
         let codexLive: CodexOfficialUsage?
+        let codexLiveFailure: String?
         let didFetchCodex: Bool
     }
 
@@ -283,6 +290,7 @@ final class UsageStore {
         cachedOfficial: ClaudeOfficialUsage?,
         fetchOfficial: Bool,
         cachedCodex: CodexOfficialUsage?,
+        cachedCodexFailure: String?,
         fetchCodex: Bool
     ) -> Collected {
         let now = Date()
@@ -300,8 +308,15 @@ final class UsageStore {
         // server reading still beats the log snapshot, which is staler by construction.
         // `CodexUsageProvider` falls back to the logs only when there has never been one.
         var codexLive = cachedCodex
-        if fetchCodex, case .usage(let reading) = CodexOfficialUsageReader.read(now: now) {
-            codexLive = reading
+        var codexFailure = cachedCodexFailure
+        if fetchCodex {
+            switch CodexOfficialUsageReader.read(now: now) {
+            case .usage(let reading):
+                codexLive = reading
+                codexFailure = nil
+            case .failure(let reason):
+                codexFailure = reason
+            }
         }
 
         // A provider switched off in settings is not read at all, so hiding it also
@@ -318,7 +333,9 @@ final class UsageStore {
             )
         }
         if config.showCodex {
-            providers.append(CodexUsageProvider.read(now: now, live: codexLive))
+            providers.append(
+                CodexUsageProvider.read(now: now, live: codexLive, liveFailure: codexFailure)
+            )
         }
 
         let snapshot = UsageSnapshot(providers: providers, capturedAt: now)
@@ -329,6 +346,7 @@ final class UsageStore {
             officialFailure: failure,
             didFetchOfficial: fetchOfficial,
             codexLive: codexLive,
+            codexLiveFailure: codexFailure,
             didFetchCodex: fetchCodex
         )
     }
